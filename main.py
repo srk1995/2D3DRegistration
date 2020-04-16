@@ -26,7 +26,8 @@ def transform(img):
 #                 ])
 
 
-root = './registration/2D3D_Data/'
+train_root = './registration/2D3D_Data/train'
+test_root = './registration/2D3D_Data/test'
 PATH = './saved/'
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 vis = visdom.Visdom()
@@ -41,8 +42,8 @@ test_loss_win = None
 test_acc_win = None
 
 
-train_dataset = Data(root, transform=transforms.ToTensor())
-test_dataset = Data(root, transform=transforms.ToTensor())
+train_dataset = Data(train_root, transform=transforms.ToTensor())
+test_dataset = Data(test_root, transform=transforms.ToTensor())
 trainloader = DataLoader(train_dataset, batch_size=train_batch_num, shuffle=True, num_workers=0)
 testloader = DataLoader(test_dataset, batch_size=train_batch_num, shuffle=False, num_workers=0)
 

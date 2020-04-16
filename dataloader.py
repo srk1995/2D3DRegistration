@@ -24,7 +24,10 @@ class Data(Dataset):
         self.CT = []
         self.Xray = []
         self.num = []
-        self.rotation = np.loadtxt('rotation.txt')
+        if self.root[-5:] == 'train':
+            self.rotation = np.loadtxt('rotation.txt')
+        else:
+            self.rotation = np.loadtxt('rotation_test.txt')
         num_samples = 0
 
         for i in self.dlist:
