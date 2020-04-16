@@ -2,7 +2,7 @@ from utils import CE, crop_image, dice_loss
 from sklearn.metrics import confusion_matrix
 import os
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "9"
+os.environ["CUDA_VISIBLE_DEVICES"] = "9,8,7,6"
 import ConvNet
 import dataloader
 import torch.optim as optim
@@ -31,7 +31,7 @@ PATH = './saved/'
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 vis = visdom.Visdom()
 
-train_batch_num = 1
+train_batch_num = 4
 
 # train_win = vis.line(Y=torch.randn(1), X=np.array([5]), opts=dict(title="Train"))
 # test_win = vis.line(Y=torch.randn(1), X=np.array([5]), opts=dict(title="Test"))
@@ -48,6 +48,7 @@ testloader = DataLoader(test_dataset, batch_size=train_batch_num, shuffle=False,
 
 net = ConvNet.Net_split(1, 4, 6)
 net = net.cuda()
+net = nn.DataParallel(net)
 
 criterion = torch.nn.MSELoss()
 optimizer = optim.Adam(net.parameters(), lr=1e-3, weight_decay=5e-4)
@@ -59,13 +60,13 @@ best_loss = np.inf
 def train(net, loader, criterion, optimizer, loss_win, acc_win):
     loss = 0.0
     acc = 0.0
-    correct = 0
-    total = 0
     net.train()
 
     for i, data in enumerate(loader, 0):
         # inputs and labels.
-        inputs, inputs_X, labels = data[0].to(device), data[1].to(device), data[2].to(device)
+        inputs = data[0][:, ::2, ::2, ::2]
+        inputs_X = data[1][:, :, ::3, ::3]
+        inputs, inputs_X, labels, num = inputs.to(device), inputs_X.to(device), data[2].to(device), data[3]
         # Set the gradient to be 0.
         optimizer.zero_grad()
 
@@ -92,13 +93,13 @@ def train(net, loader, criterion, optimizer, loss_win, acc_win):
 def test(net, loader, criterion, optimizer, loss_win, acc_win):
     loss = 0.0
     acc = 0.0
-    correct = 0
-    total = 0
     net.eval()
 
     for i, data in enumerate(loader, 0):
         # inputs and labels.
-        inputs, inputs_X, labels = data[0].to(device), data[1].to(device), data[2].to(device)
+        inputs = data[0][:, ::2, ::2, ::2]
+        inputs_X = data[1][:, :, ::3, ::3]
+        inputs, inputs_X, labels, num = inputs.to(device), inputs_X.to(device), data[2].to(device), data[3]
 
         # Set the gradient to be 0.
         optimizer.zero_grad()

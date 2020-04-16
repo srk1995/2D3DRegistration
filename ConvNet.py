@@ -98,7 +98,7 @@ class Net_split(nn.Module):
         self.conv6 = nn.Conv2d(hidden_size * 2, hidden_size, 3, padding=1)
         self.bn6_x = nn.BatchNorm2d(hidden_size)
 
-        self.fc_x = nn.Linear(hidden_size * 16 * 16, output_size * 2)
+        self.fc_x = nn.Linear(hidden_size * 8 * 8, output_size * 2)
         self.fc_out = nn.Linear(output_size*4, output_size)
 
 
@@ -135,27 +135,27 @@ class Net_split(nn.Module):
 
         out = self.conv1(xray)
         out = F.relu(self.bn1_x(out))
-        out = nn.AdaptiveMaxPool2d((512, 512))(out)
+        out = nn.AdaptiveMaxPool2d((256, 256))(out)
 
         out = self.conv2(out)
         out = F.relu(self.bn2_x(out))
-        out = nn.AdaptiveMaxPool2d((256, 256))(out)
+        out = nn.AdaptiveMaxPool2d((128, 128))(out)
 
         out = self.conv3(out)
         out = F.relu(self.bn3_x(out))
-        out = nn.AdaptiveMaxPool2d((128, 128))(out)
+        out = nn.AdaptiveMaxPool2d((64, 64))(out)
 
         out = self.conv4(out)
         out = F.relu(self.bn4_x(out))
-        out = nn.AdaptiveMaxPool2d((64, 64))(out)
+        out = nn.AdaptiveMaxPool2d((32, 32))(out)
 
         out = self.conv5(out)
         out = F.relu(self.bn5_x(out))
-        out = nn.AdaptiveMaxPool2d((32, 32))(out)
+        out = nn.AdaptiveMaxPool2d((16, 16))(out)
 
         out = self.conv6(out)
         out = F.relu(self.bn6_x(out))
-        out = nn.AdaptiveMaxPool2d((16, 16))(out)
+        out = nn.AdaptiveMaxPool2d((8, 8))(out)
 
         out = out.view((1, -1))
         out_xray = F.relu(self.fc_x(out))
