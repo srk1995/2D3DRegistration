@@ -107,23 +107,23 @@ class Net_split(nn.Module):
 
         out = self.map1(x)
         out = F.relu(self.bn1(out))
-        out = nn.AdaptiveMaxPool3d((256, 256, 131))(out)
+        out = nn.AdaptiveMaxPool3d((128, 128, 131))(out)
 
         out = self.map2(out)
         out = F.relu(self.bn2(out))
-        out = nn.AdaptiveMaxPool3d((128, 128, 128))(out)
+        out = nn.AdaptiveMaxPool3d((64, 64, 64))(out)
 
         out = self.map3(out)
         out = F.relu(self.bn3(out))
-        out = nn.AdaptiveMaxPool3d((64, 64, 64))(out)
+        out = nn.AdaptiveMaxPool3d((32, 32, 32))(out)
 
         out = self.map4(out)
         out = F.relu(self.bn4(out))
-        out = nn.AdaptiveMaxPool3d((32, 32, 32))(out)
+        out = nn.AdaptiveMaxPool3d((16, 16, 16))(out)
 
         out = self.map5(out)
         out = F.relu(self.bn5(out))
-        out = nn.AdaptiveMaxPool3d((16, 16, 16))(out)
+        out = nn.AdaptiveMaxPool3d((8, 8, 8))(out)
 
         out = self.map6(out)
         out = F.relu(self.bn6(out))
@@ -135,23 +135,23 @@ class Net_split(nn.Module):
 
         out = self.conv1(xray)
         out = F.relu(self.bn1_x(out))
-        out = nn.AdaptiveMaxPool2d((256, 256))(out)
+        out = nn.AdaptiveMaxPool2d((128, 128))(out)
 
         out = self.conv2(out)
         out = F.relu(self.bn2_x(out))
-        out = nn.AdaptiveMaxPool2d((128, 128))(out)
+        out = nn.AdaptiveMaxPool2d((64, 64))(out)
 
         out = self.conv3(out)
         out = F.relu(self.bn3_x(out))
-        out = nn.AdaptiveMaxPool2d((64, 64))(out)
+        out = nn.AdaptiveMaxPool2d((32, 32))(out)
 
         out = self.conv4(out)
         out = F.relu(self.bn4_x(out))
-        out = nn.AdaptiveMaxPool2d((32, 32))(out)
+        out = nn.AdaptiveMaxPool2d((16, 16))(out)
 
         out = self.conv5(out)
         out = F.relu(self.bn5_x(out))
-        out = nn.AdaptiveMaxPool2d((16, 16))(out)
+        out = nn.AdaptiveMaxPool2d((8, 8))(out)
 
         out = self.conv6(out)
         out = F.relu(self.bn6_x(out))

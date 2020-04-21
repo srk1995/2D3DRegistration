@@ -177,6 +177,7 @@ def raycasting(CT, Xray, R_pred, num):
     for j in range(len(timg_x)):
         result = 0
         for k in range(len(s)):
+            # pytorch index + array = sum(index)
             X0 = s[k] * np.matmul(np.linalg.inv(R_), np.array([[timg_x[j]], [timg_y[j]], [1]])) - np.matmul(
                 np.linalg.inv(R_), T_)
             img_X = np.array(

@@ -47,7 +47,7 @@ test_dataset = Data(test_root, transform=transforms.ToTensor())
 trainloader = DataLoader(train_dataset, batch_size=train_batch_num, shuffle=True, num_workers=0)
 testloader = DataLoader(test_dataset, batch_size=train_batch_num, shuffle=False, num_workers=0)
 
-net = ConvNet.Net_split(1, 4, 6)
+net = ConvNet.Net_split(1, 16, 6)
 net = net.cuda()
 net = nn.DataParallel(net)
 
@@ -65,8 +65,8 @@ def train(net, loader, criterion, optimizer, loss_win, acc_win):
 
     for i, data in enumerate(loader, 0):
         # inputs and labels.
-        inputs = data[0][:, ::2, ::2, ::2]
-        inputs_X = data[1][:, :, ::3, ::3]
+        inputs = data[0][:, :, ::4, ::4, ::3]
+        inputs_X = data[1][:, :, ::4, ::4]
         inputs, inputs_X, labels, num = inputs.to(device), inputs_X.to(device), data[2].to(device), data[3]
         # Set the gradient to be 0.
         optimizer.zero_grad()
@@ -98,8 +98,8 @@ def test(net, loader, criterion, optimizer, loss_win, acc_win):
 
     for i, data in enumerate(loader, 0):
         # inputs and labels.
-        inputs = data[0][:, ::2, ::2, ::2]
-        inputs_X = data[1][:, :, ::3, ::3]
+        inputs = data[0][:, :, ::4, ::4, ::3]
+        inputs_X = data[1][:, :, ::4, ::4]
         inputs, inputs_X, labels, num = inputs.to(device), inputs_X.to(device), data[2].to(device), data[3]
 
         # Set the gradient to be 0.
