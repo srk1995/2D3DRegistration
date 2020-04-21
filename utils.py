@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch
 from torch.nn import functional as F
 from scipy.spatial.transform import Rotation as R
-from scipy.interpolate import RegularGridInterpolator
+from scipy.interpolate import RegularGridInterpolator, LinearNDInterpolator
 
 
 def ReadText(vis):
@@ -172,24 +172,29 @@ def raycasting(CT, Xray, R_pred, num):
     s = np.arange(-600, -400, 2)
 
     # Backproject to the world coordinate
-    my_interpolating_function = RegularGridInterpolator((x, y, z), np.array(CT[0, 0].cpu()))
+    # my_interpolating_function = RegularGridInterpolator((x, y, z), np.array(CT[0, 0].cpu()))
+    xx, yy, zz = np.meshgrid(x, y, z)
+    xx, yy, zz = xx.flatten(), yy.flatten(), zz.flatten()
+    xx, yy, zz = np.append(xx, [500]), np.append(yy, [500]), np.append(zz, [500])
+    V = np.array(CT[0, 0].cpu()).flatten()
+    V = np.append(V, [0])
     proj_im = np.zeros(len(timg_x))
-    for j in range(len(timg_x)):
-        result = 0
-        for k in range(len(s)):
-            # pytorch index + array = sum(index)
-            X0 = s[k] * np.matmul(np.linalg.inv(R_), np.array([[timg_x[j]], [timg_y[j]], [1]])) - np.matmul(
-                np.linalg.inv(R_), T_)
-            img_X = np.array(
-                [X0[0] / spacing[0], X0[1] / spacing[1], X0[2]])
-            if (img_X[0] < min(x) or img_X[0] > max(x)) or (img_X[1] < min(y) or img_X[1] > max(y)) or (
-                    img_X[2] < min(z) or img_X[2] > max(z)):
-                result += 0
-            else:
-                result += my_interpolating_function(np.transpose(img_X))
-            # if result != 0:
-                # print(result)
-        proj_im[j] = result
+    result = 0
+    interpolate = LinearNDInterpolator(np.array([xx, yy, zz]).T, V)
+    for k in range(len(s)):
+        # pytorch index + array = sum(index)
+        X0 = s[k] * np.matmul(np.linalg.inv(R_), np.squeeze(np.array([[timg_x], [timg_y], [np.ones_like(timg_x)]]))) - np.matmul(
+            np.linalg.inv(R_), T_)
+        img_X = np.array(
+            [X0[0] / spacing[0], X0[1] / spacing[1], X0[2]])
+        check=((img_X[0] < min(x)) | (img_X[0] > max(x))) | ((img_X[1] < min(y)) | (img_X[1] > max(y))) | ((img_X[2] < min(z)) | (img_X[2] > max(z)))
+        img_X = np.where(check == True, 500, img_X)
+
+        result += interpolate(img_X)
+            # result += my_interpolating_function(np.transpose(img_X))
+        # if result != 0:
+            # print(result)
+    proj_im = result
 
     # pix = self.pixel_spacing.view(sz(1), 2, 1).repeat(1, 1, 1024*1024)
     # coord = inhomo_coord.type(torch.DoubleTensor) * pix.type(torch.DoubleTensor)
