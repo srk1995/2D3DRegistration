@@ -78,11 +78,15 @@ class Net_split(nn.Module):
         self.bn3 = nn.BatchNorm3d(hidden_size*2)
         self.map4 = nn.Conv3d(hidden_size*2, hidden_size*2, 3, padding=1, bias=False)
         self.bn4 = nn.BatchNorm3d(hidden_size*2)
-        self.map5 = nn.Conv3d(hidden_size * 2, hidden_size * 2, 3, padding=1, bias=False)
-        self.bn5 = nn.BatchNorm3d(hidden_size*2)
-        self.map6 = nn.Conv3d(hidden_size * 2, hidden_size, 3, padding=1, bias=False)
-        self.bn6 = nn.BatchNorm3d(hidden_size)
-        self.map7 = nn.Linear(hidden_size*8*8*8, output_size*2)
+        self.map5 = nn.Conv3d(hidden_size * 2, hidden_size * 4, 3, padding=1, bias=False)
+        self.bn5 = nn.BatchNorm3d(hidden_size*4)
+        self.map6 = nn.Conv3d(hidden_size * 4, hidden_size * 4, 3, padding=1, bias=False)
+        self.bn6 = nn.BatchNorm3d(hidden_size*4)
+        self.map7 = nn.Conv3d(hidden_size * 4, hidden_size * 8, 3, padding=1, bias=False)
+        self.bn7 = nn.BatchNorm3d(hidden_size*8)
+        self.map8 = nn.Conv3d(hidden_size * 8, hidden_size * 8, 3, padding=1, bias=False)
+        self.bn8 = nn.BatchNorm3d(hidden_size*8)
+        self.fc_ct = nn.Linear(hidden_size*8*8*8*8, output_size*2)
 
         # layers for X-ray
         self.conv1 = nn.Conv2d(input_size, hidden_size, 3, padding=1)
@@ -93,12 +97,16 @@ class Net_split(nn.Module):
         self.bn3_x = nn.BatchNorm2d(hidden_size*2)
         self.conv4 = nn.Conv2d(hidden_size*2, hidden_size * 2, 3, padding=1)
         self.bn4_x = nn.BatchNorm2d(hidden_size*2)
-        self.conv5 = nn.Conv2d(hidden_size * 2, hidden_size * 2, 3, padding=1)
-        self.bn5_x = nn.BatchNorm2d(hidden_size*2)
-        self.conv6 = nn.Conv2d(hidden_size * 2, hidden_size, 3, padding=1)
-        self.bn6_x = nn.BatchNorm2d(hidden_size)
+        self.conv5 = nn.Conv2d(hidden_size * 2, hidden_size * 4, 3, padding=1)
+        self.bn5_x = nn.BatchNorm2d(hidden_size*4)
+        self.conv6 = nn.Conv2d(hidden_size * 4, hidden_size*4, 3, padding=1)
+        self.bn6_x = nn.BatchNorm2d(hidden_size*4)
+        self.conv7 = nn.Conv2d(hidden_size * 4, hidden_size*8, 3, padding=1)
+        self.bn7_x = nn.BatchNorm2d(hidden_size*8)
+        self.conv8 = nn.Conv2d(hidden_size * 8, hidden_size*8, 3, padding=1)
+        self.bn8_x = nn.BatchNorm2d(hidden_size*8)
 
-        self.fc_x = nn.Linear(hidden_size * 8 * 8, output_size * 2)
+        self.fc_x = nn.Linear(hidden_size * 8 * 8 * 8, output_size * 2)
         self.fc_out = nn.Linear(output_size*4, output_size)
 
 
@@ -115,21 +123,30 @@ class Net_split(nn.Module):
 
         out = self.map3(out)
         out = F.relu(self.bn3(out))
-        out = nn.AdaptiveMaxPool3d((32, 32, 32))(out)
+        out = nn.AdaptiveMaxPool3d((64, 64, 64))(out)
 
         out = self.map4(out)
         out = F.relu(self.bn4(out))
-        out = nn.AdaptiveMaxPool3d((16, 16, 16))(out)
+        out = nn.AdaptiveMaxPool3d((32, 32, 32))(out)
 
         out = self.map5(out)
         out = F.relu(self.bn5(out))
-        out = nn.AdaptiveMaxPool3d((8, 8, 8))(out)
+        out = nn.AdaptiveMaxPool3d((16, 16, 16))(out)
 
         out = self.map6(out)
         out = F.relu(self.bn6(out))
         out = nn.AdaptiveMaxPool3d((8, 8, 8))(out)
+
+        out = self.map7(out)
+        out = F.relu(self.bn7(out))
+        out = nn.AdaptiveMaxPool3d((8, 8, 8))(out)
+
+        out = self.map8(out)
+        out = F.relu(self.bn8(out))
+        out = nn.AdaptiveMaxPool3d((8, 8, 8))(out)
+
         out = out.view((1, -1))
-        out_ct = F.relu(self.map7(out))
+        out_ct = F.relu(self.fc_ct(out))
 
 
 
@@ -143,18 +160,26 @@ class Net_split(nn.Module):
 
         out = self.conv3(out)
         out = F.relu(self.bn3_x(out))
-        out = nn.AdaptiveMaxPool2d((32, 32))(out)
+        out = nn.AdaptiveMaxPool2d((64, 64))(out)
 
         out = self.conv4(out)
         out = F.relu(self.bn4_x(out))
-        out = nn.AdaptiveMaxPool2d((16, 16))(out)
+        out = nn.AdaptiveMaxPool2d((32, 32))(out)
 
         out = self.conv5(out)
         out = F.relu(self.bn5_x(out))
-        out = nn.AdaptiveMaxPool2d((8, 8))(out)
+        out = nn.AdaptiveMaxPool2d((16, 16))(out)
 
         out = self.conv6(out)
         out = F.relu(self.bn6_x(out))
+        out = nn.AdaptiveMaxPool2d((8, 8))(out)
+
+        out = self.conv7(out)
+        out = F.relu(self.bn7_x(out))
+        out = nn.AdaptiveMaxPool2d((8, 8))(out)
+
+        out = self.conv8(out)
+        out = F.relu(self.bn8_x(out))
         out = nn.AdaptiveMaxPool2d((8, 8))(out)
 
         out = out.view((1, -1))
