@@ -21,9 +21,11 @@ def transform(img):
     img_tensor = torch.from_numpy(img.astype(np.int32))
     img_tensor = img_tensor.float() / max_value
     return img_tensor
-# transform = transforms.Compose([
-#                 transforms.ToTensor()
-#                 ])
+
+def custom_loss(output, labels, drr, xray):
+    mse = torch.nn.MSELoss()
+    loss = mse(output, labels) + mse(drr, xray)
+    return loss
 
 
 train_root = './registration/2D3D_Data/train'
@@ -73,19 +75,13 @@ def train(net, loader, criterion, optimizer, loss_win, acc_win):
 
         # Train -> Back propagation -> Optimization.
         outputs = net(inputs, inputs_X)
-        loss = criterion(outputs, labels)
+
+        drr = utils.raycasting(data[0], data[1], outputs, num[0])
+        loss = custom_loss(outputs, labels, drr, inputs_X)
+
         loss.backward()
         optimizer.step()
 
-        # Accuracy
-        # _, pred = torch.max(outputs.data, 1)
-        # total += labels.size(0)
-        # correct += (labels == pred).sum().item()
-        # acc = 100 * correct / total
-
-        # if i % 20 == 0:
-        #     loss_win = utils.PlotLoss(vis=vis, x=torch.Tensor([i]), y=torch.Tensor([loss]), win=loss_win, title="Train Loss")
-        #     acc_win = utils.PlotLoss(vis=vis, x=torch.Tensor([i]), y=torch.Tensor([acc]), win=acc_win, title="Train Accuracy")
 
         loss += loss.item()
 
@@ -107,7 +103,11 @@ def test(net, loader, criterion, optimizer, loss_win, acc_win):
 
         # Feed forward
         outputs = net(inputs, inputs_X)
-        loss = criterion(outputs, labels)
+
+        drr = utils.raycasting(data[0], data[1], outputs, num[0])
+        loss = custom_loss(outputs, labels, drr, inputs_X)
+
+
 
         # Accuracy
         # _, pred = torch.max(outputs.data, 1)

@@ -107,7 +107,10 @@ class Net_split(nn.Module):
         self.bn8_x = nn.BatchNorm2d(hidden_size*8)
 
         self.fc_x = nn.Linear(hidden_size * 8 * 8 * 8, output_size * 2)
-        self.fc_out = nn.Linear(output_size*4, output_size)
+        self.fc1 = nn.Linear(output_size * 4, output_size * 3)
+        self.fc2 = nn.Linear(output_size * 3, output_size * 2)
+        self.fc3 = nn.Linear(output_size * 2, output_size)
+        self.fc_out = nn.Linear(output_size, output_size)
 
 
     def forward(self, x, xray):
@@ -148,8 +151,7 @@ class Net_split(nn.Module):
         out = out.view((1, -1))
         out_ct = F.relu(self.fc_ct(out))
 
-
-
+        # X-ray
         out = self.conv1(xray)
         out = F.relu(self.bn1_x(out))
         out = nn.AdaptiveMaxPool2d((128, 128))(out)
@@ -186,6 +188,9 @@ class Net_split(nn.Module):
         out_xray = F.relu(self.fc_x(out))
 
         out = torch.cat((out_ct, out_xray), dim=-1)
+        out = F.relu(self.fc1(out))
+        out = F.relu(self.fc2(out))
+        out = F.relu(self.fc3(out))
         out = torch.sigmoid(self.fc_out(out))
 
 

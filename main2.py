@@ -31,7 +31,7 @@ PATH = './saved/'
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 vis = visdom.Visdom()
 
-train_batch_num = 1
+train_batch_num = 2
 
 # train_win = vis.line(Y=torch.randn(1), X=np.array([5]), opts=dict(title="Train"))
 # test_win = vis.line(Y=torch.randn(1), X=np.array([5]), opts=dict(title="Test"))

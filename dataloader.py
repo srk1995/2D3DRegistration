@@ -19,6 +19,11 @@ def transform(img):
 
 class Data(Dataset):
     def __init__(self, root, transform):
+        """
+        :param root: the path of data
+        :param transform: transforms to make the output tensor
+        
+        """
         self.root = root
         self.dlist = os.listdir(root)
         self.transform = transform
@@ -59,6 +64,11 @@ class Data(Dataset):
 
 
     def __getitem__(self, index):
+        """
+        :param index:
+        :return CT: [B, C, H, W, D] == [4, 1, 512, 512, 393]
+        :return X-ray: [B, C, H, W] == [4, 1, 960, 1240]
+        """
         CT = os.path.join(self.CT[index])
         Xray = os.path.join(self.Xray[index])
         angle = self.rotation[index]
@@ -83,22 +93,50 @@ class Data(Dataset):
         Xray_out = (Xray_out - xray_min) / xray_max
 
         return torch.tensor(CT_out), torch.tensor(Xray_out), label, self.num[index]
+
     def __len__(self):
         return self.num_samples
 
 
 
-class Kaist_Data(Data):
+class Kaist_Data(Dataset):
     def __init__(self, root, transform):
-        self.CT = pymesh.load_mehs('hepatic artery_200417.stl')
-        self.dlist = os.listdir(root)
+        self.root = root
+        self.transform = transform
+        self.CT = pymesh.load_mesh(self.root + 'hepatic_artery_200417.stl')
+        self.dlist = os.listdir(self.root)
+        self.list = [root + x for x in self.dlist if os.path.isdir(root+x)]
+        self.list.sort()
+        self.xlist = []
+        self.num = 0
+        for x in self.list:
+            tt = os.listdir(x)
+            tt.sort()
+            [self.xlist.append(x + '/' + p) for p in tt]
+            self.num += len(tt)
+
+        self.f = open("kaist_rt.txt", "r")
+        self.lines = self.f.read().split('\n')
+        self.rt = np.zeros((len(self.lines), 4))
+        for i in range(len(self.lines)):
+            # print(self.lines[i].split(' '))
+            self.rt[i, :] = np.asarray(self.lines[i].split(' '))
 
     def __getitem__(self, item):
-        self.xray = self.dlist[item]
-        return self.CT, self.xray
+        self.xray_path = self.xlist[item]
+        self.rot = self.xray_path.split('/')[-2]
+        if self.rot[0] == '_':
+            self.rot = '-' + self.rot[1:]
+
+        self.rot = int(self.rot)
+        self.label = self.rt[np.where(self.rt[:, 0] == self.rot)[0][0], :]
+        self.label = np.concatenate(([0, 0], self.label), axis=0)
+        self.xray = np.array(Image.open(self.xray_path))
+
+        return self.transform(self.CT), self.transform(self.xray)
 
     def __len__(self):
-        return len(self.dlist)
+        return self.num
 
 
 
@@ -107,7 +145,9 @@ if __name__ == "__main__":
     path = '/home/srk1995/pub/db/kaist_vessel/'
     # cTdataloader = Data(root, transform=transforms.ToTensor())
     kdata = Kaist_Data(path, transform=transforms.ToTensor())
-    for i, data in enumerate(kdata):
+    trainloader = DataLoader(kdata, batch_size=1, shuffle=True, num_workers=0)
+    testloader = DataLoader(kdata, batch_size=1, shuffle=False, num_workers=0)
+    for i, data in enumerate(trainloader):
         print(data)
 
     print("EOP")
