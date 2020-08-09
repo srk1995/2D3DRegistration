@@ -100,7 +100,7 @@ def interp3(x, y, z, v, xi, yi, zi, method='cubic'):
         v = interp1d(q[j], v, axis=j, kind=method)(qi[j])
     return v
 
-def raycasting(CT, Xray, R_pred, num):
+def raycasting(CT, R_pred, num):
     """
     :param CT:
     :param Xray:
@@ -114,111 +114,60 @@ def raycasting(CT, Xray, R_pred, num):
     # pixel_spacing = [1, 1]
 
     ct_pix = [512, 512]
-    proj_pix = [960, 1024]
-    proj_sz = [1, 1]
+    proj_pix = [960, 1240]
 
     # Camera matrix
-    R_pred = R_pred.cpu().detach().numpy()[0]
-    Rx = R.from_euler('x', R_pred[0], degrees=True)
-    Ry = R.from_euler('y', R_pred[1], degrees=True)
-    Rz = R.from_euler('z', R_pred[2], degrees=True)
+    R_pred = R_pred.cpu().detach().numpy()
+    Rx = R.from_euler('x', R_pred[:, 0], degrees=True)
+    Ry = R.from_euler('y', R_pred[:, 1], degrees=True)
+    Rz = R.from_euler('z', R_pred[:, 2], degrees=True)
     r = Rx * Ry * Rz
 
-    t = np.array([[R_pred[3]], [R_pred[4]], [R_pred[5]]])
-    extrinsic = np.concatenate((r.as_dcm().transpose(), t), axis=-1)
-    K = np.loadtxt('intrinsic_mat.txt')
-    rot = r.as_dcm().transpose()
-
-
-    # Test projection
-    pts = np.array([[-1, -1, 512, 1], [-1, 1, 512, 1], [1, -1, 512, 1], [1, 1, 512, 1], [-1, -1, 513, 1], [-1, 1, 513, 1], [1, -1, 513, 1], [1, 1, 513, 1]]).transpose(1, 0)
-
-    pts = np.array([np.mgrid[-ct_pix[0]/2 * pixel_spacing[0] - position[0][0]:ct_pix[0]/2 * pixel_spacing[0] - position[0][0]:pixel_spacing[0], -ct_pix[0]/2 * pixel_spacing[1]- position[0][1]:ct_pix[1]/2 * pixel_spacing[1] - position[0][1]: pixel_spacing[1]].T.reshape(-1, 2)]*position.shape[0])
-    pts = pts.reshape(-1, 2)
-    z = np.repeat(np.array(position[:, 2]), ct_pix[0]*ct_pix[1])
-    z = z.reshape(-1, 1)
-
-    pts = np.hstack((pts, z))
-    # projected = np.matmul(np.matmul(K, rot), pts) + np.matmul(K, t)
-    # projected_inhomo = projected / projected[2, :]
-    #
-    # # Assign world coordinate (first: up to down, last: left to right)`
-    # tworld_x = np.array(torch.arange(1, ct_pix[0]+1, dtype=torch.float32).repeat(ct_pix[1], 1).transpose(0, 1).reshape(1, -1))[0] - (ct_pix[0]+1)/2
-    # # tworld_x = np.repeat(world_x[:, np.newaxis], len(self.position), axis=1)
-    # tworld_y = np.flip(np.array(torch.arange(1, ct_pix[1]+1, dtype=torch.float32).repeat(1, ct_pix[0]))[0], 0) - (ct_pix[1]+1)/2
-    # # tworld_y = np.repeat(world_y[:, np.newaxis], len(self.position), axis=1)
-    # world_x, world_y, world_z = np.zeros_like(tworld_x), np.zeros_like(tworld_x), np.zeros_like(tworld_x)
-    # x = np.array(torch.arange(1, ct_pix[0]+1, dtype=torch.float32)) - (ct_pix[0]+1)/2
-    # y = np.array(torch.arange(1, ct_pix[1]+1, dtype=torch.float32)) - (ct_pix[1]+1)/2
-
-    # tt = pts.reshape((393, 512, 512, 3))
+    t = torch.tensor(np.array([[R_pred[:, 3]], [R_pred[:, 4]], [R_pred[:, 5]]]))
+    K = torch.tensor(np.loadtxt('intrinsic_mat.txt'), dtype=torch.float32)
+    rot = torch.tensor(r.as_dcm(), dtype=torch.float32)
 
     # Assign image coordinate
-    s_min, s_max = -800, -600
+    s_min, s_max = -800, -200
+    ss = 200
     img_pts = np.array([np.mgrid[1:proj_pix[1]+1, 1:proj_pix[0]+1].T.reshape(-1, 2)] * (s_max-s_min))
 
-    # img_pts = np.hstack((img_pts, np.ones((len(img_pts), 1))))
-    img_pts = img_pts.reshape(-1, 2)
-    s = np.repeat(np.mgrid[s_min:s_max], proj_pix[0]*proj_pix[1])
-    s = s.reshape(-1, 1)
+    # img_pts = img_pts.reshape(-1, 2)
+    img_pts = torch.tensor(img_pts).view((-1, 2))
 
-    img_pts = np.hstack((img_pts, s))
+    # s = np.repeat(np.mgrid[s_min:s_max], proj_pix[0]*proj_pix[1])
+    # s = s.reshape(-1, 1)
 
-    img_pts = img_pts.reshape((s_max-s_min, 960, 1024, 3)).transpose((3, 0, 1, 2)).reshape((3, -1))
+    s = torch.tensor(np.mgrid[s_min:s_max].repeat(proj_pix[0] * proj_pix[1]))
+    s = s.view((-1, 1))
 
-    backp = np.matmul(np.matmul(np.linalg.inv(rot), np.linalg.inv(K)), img_pts - np.matmul(K, t))
-    backp = backp.reshape((3, s_max-s_min, -1)).transpose((2, 1, 0))  # -1, 200, 3
+    img_pts = torch.cat([img_pts, s], dim=-1).numpy()
+
+    img_pts = img_pts.reshape((s_max-s_min, proj_pix[0], proj_pix[1], 3)).transpose((3, 0, 1, 2)).reshape(3, -1, 1)
+
+    img_pts = torch.tensor(np.tile(img_pts, (1, 1, num)).transpose((2, 0, 1)))
+    # backp = np.matmul(np.matmul(np.linalg.inv(rot), np.linalg.inv(K)), img_pts - np.matmul(K, t.squeeze()).T.reshape((num, 3, 1)))
+    backp = torch.matmul(torch.matmul(torch.inverse(rot), torch.inverse(K)),
+                      img_pts - torch.matmul(K, t.view((3, num))).T.reshape((num, 3, 1)))
+    backp = backp.view((num, 3, s_max-s_min, -1)).permute((0, 3, 2, 1))  # num, -1, 200, 3
 
 
     x = np.linspace(-ct_pix[0]/2 * pixel_spacing[0] - position[0][0], ct_pix[0]/2 * pixel_spacing[0] - position[0][0], 512)
     y = np.linspace(-ct_pix[1] / 2 * pixel_spacing[1] - position[0][1],
                     ct_pix[1] / 2 * pixel_spacing[1] - position[0][1], 512)
     z = np.array(position[:, 2])
+
+    min_v = np.array([x[0], y[0], z[0]])
+    max_v = np.array([x[-1], y[-1], z[-1]])
+
+    n_backp = (backp - (min_v + max_v)/2) / ((max_v - min_v)/2)
     # Set the distance between camera center and object
 
     # Backproject to the world coordinate
-    my_interpolating_function = RegularGridInterpolator((x, y, z), np.array(CT[0, 0].cpu()))
-    # g = LinearNDInterpolator(pts, CT[0].numpy().ravel())
-
-    tt = my_interpolating_function(backp)
-    xx, yy, zz = np.meshgrid(x, y, z)
-    xx, yy, zz = xx.flatten(), yy.flatten(), zz.flatten()
-    xx, yy, zz = np.append(xx, [500]), np.append(yy, [500]), np.append(zz, [500])
-    V = np.array(CT[0, 0].cpu()).flatten()
-    V = np.append(V, [0])
-    proj_im = np.zeros(len(timg_x))
-    result = 0
-    interpolate = LinearNDInterpolator(np.array([xx, yy, zz]).T, V)
-    for k in range(len(s)):
-        # pytorch index + array = sum(index)
-        X0 = s[k] * np.matmul(np.linalg.inv(R_), np.squeeze(np.array([[timg_x], [timg_y], [np.ones_like(timg_x)]]))) - np.matmul(
-            np.linalg.inv(R_), T_)
-        img_X = np.array(
-            [X0[0] / spacing[0], X0[1] / spacing[1], X0[2]])
-        check=((img_X[0] < min(x)) | (img_X[0] > max(x))) | ((img_X[1] < min(y)) | (img_X[1] > max(y))) | ((img_X[2] < min(z)) | (img_X[2] > max(z)))
-        img_X = np.where(check == True, 500, img_X)
-
-        result += interpolate(img_X)
-            # result += my_interpolating_function(np.transpose(img_X))
-        # if result != 0:
-            # print(result)
-    proj_im = result
-
-    # pix = self.pixel_spacing.view(sz(1), 2, 1).repeat(1, 1, 1024*1024)
-    # coord = inhomo_coord.type(torch.DoubleTensor) * pix.type(torch.DoubleTensor)
-    # coord_xy = torch.cat((coord.type(torch.FloatTensor), torch.zeros_like(coord[:, 0, :].view(sz(1), 1, -1), dtype=torch.float32)), dim=1)
-    # coord_xy += self.position.type(torch.FloatTensor).view(sz(1), 3, 1).repeat(1, 1, 1024*1024)
-    # one = torch.ones_like(coord_xy[:, 0, :]).view(sz(1), 1, -1)
-    # world_coord = torch.cat((coord_xy, one), dim=1).transpose(1, 0).reshape(4, -1).cuda()
-
-
-    # image_coord = torch.mm(cam_mat, world_coord)
-    # image_coord_inhomo = image_coord[:2] / image_coord[2]
-    # image_coord_inhomo = image_coord_inhomo.reshape(2, sz(1), -1).transpose(1, 0)
-    # projected =
-
-    # print(self.position)
-
-
-    proj_im = proj_im.reshape((960, 1024))
+    # my_interpolating_function = RegularGridInterpolator((x, y, z), np.array(CT[0, 0].cpu()))
+    V = torch.tensor(np.array(CT[:, 0].cpu())).permute(0, 3, 1, 2).cuda()
+    V = V.view((num, 1, 393, 512, 512))
+    n_backp = torch.tensor(n_backp, dtype=torch.float32).cuda().view((num, proj_pix[0], proj_pix[1], s_max-s_min, 3)).permute(0, 3, 1, 2, 4)
+    g = torch.nn.functional.grid_sample(V, n_backp, mode='bilinear', padding_mode='zeros')
+    proj_im = torch.sum(g, dim=2)
     return proj_im
