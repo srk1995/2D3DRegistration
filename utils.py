@@ -3,7 +3,9 @@ import torch.nn as nn
 import torch
 from torch.nn import functional as F
 from scipy.spatial.transform import Rotation as R
+import cv2
 from scipy.interpolate import RegularGridInterpolator, LinearNDInterpolator, interp1d
+import itertools
 
 
 def ReadText(vis):
@@ -93,19 +95,22 @@ def dice_loss(true, logits, eps=1e-7):
     dice_loss = (2. * intersection / (cardinality + eps)).mean()
     return (1 - dice_loss)
 
-def interp3(x, y, z, v, xi, yi, zi, method='cubic'):
-    q = (x, y, z)
-    qi = (xi, yi, zi)
-    for j in range(3):
-        v = interp1d(q[j], v, axis=j, kind=method)(qi[j])
-    return v
 
-def raycasting(CT, R_pred, num):
+def cartesian_product(*arrays):
+    la = len(arrays)
+    dtype = np.result_type(*arrays)
+    arr = np.empty([len(a) for a in arrays] + [la], dtype=dtype)
+    for i, a in enumerate(np.ix_(*arrays)):
+        arr[..., i] = a
+    return arr.reshape(-1, la)
+
+
+def raycasting(CT, R_pred, num, R_):
     """
     :param CT:
-    :param Xray:
     :param R_pred:
     :param num:
+    :param R_:
     :return:
     """
 
@@ -117,7 +122,8 @@ def raycasting(CT, R_pred, num):
     proj_pix = [960, 1240]
 
     # Camera matrix
-    R_pred = R_pred.cpu().detach().numpy()
+    # R_pred = R_pred.cpu().detach().numpy()
+    R_pred = R_.cpu().detach().numpy()
     Rx = R.from_euler('x', R_pred[:, 0], degrees=True)
     Ry = R.from_euler('y', R_pred[:, 1], degrees=True)
     Rz = R.from_euler('z', R_pred[:, 2], degrees=True)
@@ -128,28 +134,24 @@ def raycasting(CT, R_pred, num):
     rot = torch.tensor(r.as_dcm(), dtype=torch.float32)
 
     # Assign image coordinate
-    s_min, s_max = -800, -200
-    ss = 200
-    img_pts = np.array([np.mgrid[1:proj_pix[1]+1, 1:proj_pix[0]+1].T.reshape(-1, 2)] * (s_max-s_min))
+    s_min, s_max = -600, -400
+    ss = 1
+    img_pts = np.array([np.mgrid[1:proj_pix[1]+1, 1:proj_pix[0]+1].T.reshape(-1, 2)] * ((s_max-s_min)//ss))
 
     # img_pts = img_pts.reshape(-1, 2)
     img_pts = torch.tensor(img_pts).view((-1, 2))
 
-    # s = np.repeat(np.mgrid[s_min:s_max], proj_pix[0]*proj_pix[1])
-    # s = s.reshape(-1, 1)
-
-    s = torch.tensor(np.mgrid[s_min:s_max].repeat(proj_pix[0] * proj_pix[1]))
+    s = torch.tensor(np.mgrid[s_min:s_max:ss].repeat(proj_pix[0] * proj_pix[1]))
     s = s.view((-1, 1))
 
     img_pts = torch.cat([img_pts, s], dim=-1).numpy()
 
-    img_pts = img_pts.reshape((s_max-s_min, proj_pix[0], proj_pix[1], 3)).transpose((3, 0, 1, 2)).reshape(3, -1, 1)
+    img_pts = img_pts.reshape(((s_max-s_min)//ss, proj_pix[0], proj_pix[1], 3)).transpose((3, 0, 1, 2)).reshape(3, -1, 1)
 
     img_pts = torch.tensor(np.tile(img_pts, (1, 1, num)).transpose((2, 0, 1)))
-    # backp = np.matmul(np.matmul(np.linalg.inv(rot), np.linalg.inv(K)), img_pts - np.matmul(K, t.squeeze()).T.reshape((num, 3, 1)))
     backp = torch.matmul(torch.matmul(torch.inverse(rot), torch.inverse(K)),
                       img_pts - torch.matmul(K, t.view((3, num))).T.reshape((num, 3, 1)))
-    backp = backp.view((num, 3, s_max-s_min, -1)).permute((0, 3, 2, 1))  # num, -1, 200, 3
+    backp = backp.view((num, 3, (s_max-s_min)//ss, -1)).permute((0, 3, 2, 1))  # num, -1, 200, 3
 
 
     x = np.linspace(-ct_pix[0]/2 * pixel_spacing[0] - position[0][0], ct_pix[0]/2 * pixel_spacing[0] - position[0][0], 512)
@@ -157,17 +159,99 @@ def raycasting(CT, R_pred, num):
                     ct_pix[1] / 2 * pixel_spacing[1] - position[0][1], 512)
     z = np.array(position[:, 2])
 
+    tt = cartesian_product(x, y, z)
+
+    ttt = np.matmul(np.matmul(K, rot), tt.T) + np.matmul(K, t.view(3, 1))
+    ttt = ttt.T.cpu().numpy()
+
     min_v = np.array([x[0], y[0], z[0]])
     max_v = np.array([x[-1], y[-1], z[-1]])
 
     n_backp = (backp - (min_v + max_v)/2) / ((max_v - min_v)/2)
+
     # Set the distance between camera center and object
 
     # Backproject to the world coordinate
     # my_interpolating_function = RegularGridInterpolator((x, y, z), np.array(CT[0, 0].cpu()))
-    V = torch.tensor(np.array(CT[:, 0].cpu())).permute(0, 3, 1, 2).cuda()
-    V = V.view((num, 1, 393, 512, 512))
-    n_backp = torch.tensor(n_backp, dtype=torch.float32).cuda().view((num, proj_pix[0], proj_pix[1], s_max-s_min, 3)).permute(0, 3, 1, 2, 4)
-    g = torch.nn.functional.grid_sample(V, n_backp, mode='bilinear', padding_mode='zeros')
+    V = CT.cuda()
+    V = V.view((num, 1, V.size(1), 512, 512))
+    n_backp = torch.tensor(n_backp, dtype=torch.float32).cuda().view((num, proj_pix[0], proj_pix[1], (s_max-s_min)//ss, 3)).permute(0, 3, 1, 2, 4)
+    g = torch.nn.functional.grid_sample(V, n_backp, mode='bilinear', padding_mode='border')
     proj_im = torch.sum(g, dim=2)
+    # print(proj_im.max())
     return proj_im
+
+def DRR_generation(CT, R_):
+    """
+    :param CT:
+    :param R_pred:
+    :param num:
+    :param R_:
+    :return:
+    """
+
+    ct_pix = [512, 512]
+    proj_pix = [960, 1240]
+
+    # Camera matrix
+    # R_pred = R_pred.cpu().detach().numpy()
+    R_pred = R_.cpu().numpy()
+    Rx = R.from_euler('x', R_pred[:, 0], degrees=True)
+    Ry = R.from_euler('y', R_pred[:, 1], degrees=True)
+    Rz = R.from_euler('z', R_pred[:, 2], degrees=True)
+    r = Rx * Ry * Rz
+
+    t = torch.tensor(np.array([[R_pred[:, 3]], [R_pred[:, 4]], [R_pred[:, 5]]]))
+    f = 0.5
+    K = torch.tensor([[f, 0, proj_pix[0]/2], [0, f, proj_pix[1]/2], [0, 0, 1]], dtype=torch.float32)
+    rot = torch.tensor(r.as_dcm(), dtype=torch.float32)
+
+    # Assign image coordinate
+    s_min, s_max = -200, 200
+    ss = 1
+    img_pts = np.array([np.mgrid[1:proj_pix[1]+1, 1:proj_pix[0]+1].T.reshape(-1, 2)] * ((s_max-s_min)//ss))
+
+    # img_pts = img_pts.reshape(-1, 2)
+    img_pts = torch.tensor(img_pts).view((-1, 2))
+
+    s = torch.tensor(np.mgrid[s_min:s_max:ss].repeat(proj_pix[0] * proj_pix[1]))
+    s = s.view((-1, 1))
+
+    img_pts = torch.cat([img_pts, s], dim=-1).numpy()
+
+    img_pts = img_pts.reshape(((s_max-s_min)//ss, proj_pix[0], proj_pix[1], 3)).transpose((3, 0, 1, 2)).reshape(3, -1, 1)
+
+    img_pts = torch.tensor(np.tile(img_pts, (1, 1, 1)).transpose((2, 0, 1)))
+    backp = torch.matmul(torch.matmul(torch.inverse(rot), torch.inverse(K)),
+                      img_pts - torch.matmul(K, t.view((3, 1))).T.reshape((1, 3, 1)))
+    backp = backp.view((1, 3, (s_max-s_min)//ss, -1)).permute((0, 3, 2, 1))  # num, -1, 200, 3
+
+    # x = np.linspace(-ct_pix[0]/2, ct_pix[0]/2 -1, 512)
+    # y = np.linspace(-ct_pix[1] / 2, ct_pix[1] / 2 -1, 512)
+    # z = np.linspace(-CT.size(1)/2, CT.size(1)/2-1, CT.size(1))
+    #
+    # tt = cartesian_product(x, y, z)
+
+
+    min_v = np.array([-(ct_pix[0]-1)/2, -(ct_pix[1]-1)/2, -(CT.size(1)-1)/2])
+    max_v = np.array([(ct_pix[0]-1)/2, (ct_pix[1]-1)/2, (CT.size(1)-1)/2])
+
+    n_backp = (backp - (min_v + max_v)/2) / ((max_v - min_v)/2)
+
+    tt = n_backp.cpu().numpy()
+
+    # Set the distance between camera center and object
+
+    # Backproject to the world coordinate
+    V = CT.cuda()
+    V = V.view((1, 1, V.size(1), 512, 512))
+    n_backp = torch.tensor(n_backp, dtype=torch.float32).cuda().view((1, proj_pix[0], proj_pix[1], (s_max-s_min)//ss, 3)).permute(0, 3, 1, 2, 4)
+    g = torch.nn.functional.grid_sample(V, n_backp, mode='bilinear', padding_mode='border')
+    proj_im = torch.sum(g, dim=2)
+    # print(proj_im.max())
+    tt = proj_im.cpu().numpy().squeeze()
+    tt = (tt - tt.min()) / tt.max()
+    # cv2.imshow('img', tt)
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
+    return tt

@@ -2,7 +2,7 @@ from utils import CE, crop_image, dice_loss
 from sklearn.metrics import confusion_matrix
 import os
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "9,8,7,6"
+os.environ["CUDA_VISIBLE_DEVICES"] = "9"
 import ConvNet
 import dataloader
 import torch.optim as optim
@@ -24,7 +24,7 @@ def transform(img):
 
 def custom_loss(output, labels, drr, xray):
     mse = torch.nn.MSELoss()
-    loss = mse(output, labels) + alpha * mse(drr, xray)
+    loss = alpha * mse(output, labels) + beta * mse(drr, xray)
     return loss
 
 
@@ -35,8 +35,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 vis = visdom.Visdom()
 
 train_batch_num = 1
-s = 10
-alpha = 1e-2
+s = 8  # downsizing
+alpha = 1
+beta = 1e-2
 
 # train_win = vis.line(Y=torch.randn(1), X=np.array([5]), opts=dict(title="Train"))
 # test_win = vis.line(Y=torch.randn(1), X=np.array([5]), opts=dict(title="Test"))
@@ -47,18 +48,21 @@ test_drr_win = None
 train_xray_win = None
 test_xray_win = None
 
-
-train_dataset = Data(train_root, transform=transforms.ToTensor())
-test_dataset = Data(test_root, transform=transforms.ToTensor())
+transfroms_ = transforms.Compose([
+    transforms.ToTensor(),
+    # transforms.Resize((64, 64))
+])
+train_dataset = Data(train_root, transform=transfroms_)
+test_dataset = Data(test_root, transform=transfroms_)
 trainloader = DataLoader(train_dataset, batch_size=train_batch_num, shuffle=True, num_workers=0)
 testloader = DataLoader(test_dataset, batch_size=train_batch_num, shuffle=False, num_workers=0)
 
-net = ConvNet.Net_split(1, 16, 6)
+net = ConvNet.layer6Net(1, 8, 6)
 net = net.cuda()
 net = nn.DataParallel(net)
 
 criterion = torch.nn.MSELoss()
-optimizer = optim.Adam(net.parameters(), lr=1e-2, weight_decay=5e-4)
+optimizer = optim.Adam(net.parameters(), lr=1e-3, weight_decay=5e-4)
 # train_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=300)
 
 best_loss = np.inf
@@ -70,8 +74,8 @@ def train(net, loader, optimizer, loss_win, drr_win, xray_win):
 
     for i, data in enumerate(loader, 0):
         # inputs and labels.
-        inputs = data[0][:, :, ::s, ::s, ::3]
-        inputs_X = data[1][:, :, ::s, ::s]
+        inputs = data[0]
+        inputs_X = data[1]
         inputs, inputs_X, labels, num = inputs.to(device), inputs_X.to(device), data[2].to(device), data[3]
         # Set the gradient to be 0.
         optimizer.zero_grad()
@@ -79,7 +83,7 @@ def train(net, loader, optimizer, loss_win, drr_win, xray_win):
         # Train -> Back propagation -> Optimization.
         outputs = net(inputs, inputs_X)
 
-        drr = utils.raycasting(data[0], outputs, data[0].__len__())
+        drr = utils.raycasting(data[0], outputs, data[0].__len__(), labels)
         loss = custom_loss(outputs, labels, drr, data[1].cuda())
 
         loss.backward()
@@ -87,7 +91,7 @@ def train(net, loader, optimizer, loss_win, drr_win, xray_win):
 
         drr_win = utils.PlotImage(vis=vis, img=drr[0].cpu().numpy().squeeze(), win=drr_win, title="Train DRR")
         xray_win = utils.PlotImage(vis=vis, img=data[1][0].cpu().numpy().squeeze(), win=xray_win, title="Train X-ray")
-        if i % 2000 == 0:
+        if i % 10 == 0:
             loss_win = utils.PlotLoss(vis=vis, x=torch.Tensor([i]), y=torch.Tensor([loss]), win=loss_win, title="Train Loss")
 
         train_loss += loss.item()
@@ -100,8 +104,8 @@ def test(net, loader, optimizer, loss_win, drr_win, xray_win):
 
     for i, data in enumerate(loader, 0):
         # inputs and labels.
-        inputs = data[0][:, :, ::s, ::s, ::3]
-        inputs_X = data[1][:, :, ::s, ::s]
+        inputs = data[0]
+        inputs_X = data[1]
         inputs, inputs_X, labels, num = inputs.to(device), inputs_X.to(device), data[2].to(device), data[3]
         # Set the gradient to be 0.
         optimizer.zero_grad()
@@ -109,12 +113,12 @@ def test(net, loader, optimizer, loss_win, drr_win, xray_win):
         # Feed forward
         outputs = net(inputs, inputs_X)
 
-        drr = utils.raycasting(data[0], outputs, data[0].__len__())
+        drr = utils.raycasting(data[0], outputs, data[0].__len__(), labels)
         loss = custom_loss(outputs, labels, drr, data[1].cuda())
 
         drr_win = utils.PlotImage(vis=vis, img=drr[0].cpu().numpy().squeeze(), win=drr_win, title="Test DRR")
         xray_win = utils.PlotImage(vis=vis, img=data[1][0].cpu().numpy().squeeze(), win=xray_win, title="Test X-ray")
-        if i % 2000 == 0:
+        if i % 10 == 0:
             loss_win = utils.PlotLoss(vis=vis, x=torch.Tensor([i]), y=torch.Tensor([loss]), win=loss_win, title="Test Loss")
 
         test_loss += loss.item()
@@ -124,7 +128,7 @@ def test(net, loader, optimizer, loss_win, drr_win, xray_win):
 
 if __name__ == "__main__":
     for epoch in range(200):
-        train_loss, train_loss_win, train_drr_win, train_xray_win= train(net, testloader, optimizer, train_loss_win, train_drr_win, train_xray_win)
+        train_loss, train_loss_win, train_drr_win, train_xray_win= train(net, trainloader, optimizer, train_loss_win, train_drr_win, train_xray_win)
         test_loss, test_loss_win, test_drr_win, test_xray_win = test(net, testloader, optimizer, test_loss_win, test_drr_win, test_xray_win)
         # train_scheduler.step(epoch)
 

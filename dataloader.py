@@ -9,6 +9,8 @@ from PIL import Image
 from torchvision import transforms
 from scipy.spatial.transform import Rotation as R
 import pymesh
+import utils
+import visdom
 
 
 def transform(img):
@@ -98,6 +100,50 @@ class Data(Dataset):
         return self.num_samples
 
 
+class SegData(Dataset):
+    def __init__(self, root, transform):
+        """
+        :param root: the path of data
+        :param transform: transforms to make the output tensor
+
+        """
+        self.root = root
+        self.dlist = [os.path.join(self.root, x) for x in os.listdir(root)]
+        self.transform = transform
+        self.rotation = np.mgrid[-20:20:5]
+        self.CT = []
+
+        self.drr_win = None
+        self.vis = visdom.Visdom()
+
+        # self.num_samples = len(self.dlist)
+
+    def __getitem__(self, index):
+        """
+        :param index:
+        :return CT: [B, C, H, W, D] == [4, 1, 512, 512, 393]
+        """
+        index_ct = np.random.randint(len(self.dlist))
+        CT = os.path.join(self.dlist[index_ct], '3d_numpy.npy')
+
+        CT_out = np.load(CT)
+        CT_out = np.expand_dims(np.array(CT_out, dtype=np.float32), axis=-1).transpose((3, 2, 1, 0))
+        T = torch.zeros([1, 6], dtype=torch.float32)
+        T[:, 2] = torch.tensor(self.rotation[index])
+        drr = utils.DRR_generation(torch.tensor(CT_out), T)
+
+        self.drr_win = utils.PlotImage(vis=self.vis, img=drr, win=self.drr_win, title="DRR")
+        # ct_min = np.min(np.min(np.min(CT_out, axis=0), axis=0), axis=0)
+        # ct_max = np.max(np.max(np.max(CT_out, axis=0), axis=0), axis=0)
+        ct_mean = np.mean(np.mean(np.mean(CT_out, axis=0), axis=0), axis=0)
+        ct_std = np.std(CT_out)
+        CT_out = (CT_out - ct_mean) / ct_std
+
+        return self.transform(CT_out.squeeze()), self.transform(drr), self.transform(T)
+
+    def __len__(self):
+        return self.rotation.size
+
 
 class Kaist_Data(Dataset):
     def __init__(self, root, transform):
@@ -142,9 +188,9 @@ class Kaist_Data(Dataset):
 
 if __name__ == "__main__":
     root = './registration/2D3D_Data/'
-    path = '/home/srk1995/pub/db/kaist_vessel/'
+    path = '/home/srk1995/pub/db/Dicom_Image_Unet_pseudo/'
     # cTdataloader = Data(root, transform=transforms.ToTensor())
-    kdata = Kaist_Data(path, transform=transforms.ToTensor())
+    kdata = SegData(path, transform=transforms.ToTensor())
     trainloader = DataLoader(kdata, batch_size=1, shuffle=True, num_workers=0)
     testloader = DataLoader(kdata, batch_size=1, shuffle=False, num_workers=0)
     for i, data in enumerate(trainloader):
