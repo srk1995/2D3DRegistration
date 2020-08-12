@@ -110,7 +110,7 @@ class SegData(Dataset):
         self.root = root
         self.dlist = [os.path.join(self.root, x) for x in os.listdir(root)]
         self.transform = transform
-        self.rotation = np.mgrid[-20:20:5]
+        self.rotation = np.mgrid[-20:20:41]
         self.CT = []
 
         self.drr_win = None
@@ -121,25 +121,26 @@ class SegData(Dataset):
     def __getitem__(self, index):
         """
         :param index:
-        :return CT: [B, C, H, W, D] == [4, 1, 512, 512, 393]
+        :return CT: [B, C, D, H, W] == [4, 1, 393, 512, 512]
         """
         index_ct = np.random.randint(len(self.dlist))
         CT = os.path.join(self.dlist[index_ct], '3d_numpy.npy')
 
         CT_out = np.load(CT)
         CT_out = np.expand_dims(np.array(CT_out, dtype=np.float32), axis=-1).transpose((3, 2, 1, 0))
-        T = torch.zeros([1, 6], dtype=torch.float32)
-        T[:, 2] = torch.tensor(self.rotation[index])
-        drr = utils.DRR_generation(torch.tensor(CT_out), T)
+        CT_out = torch.tensor(CT_out)
+        T = torch.zeros(6, dtype=torch.float32)
+        T[2] = torch.tensor(self.rotation[index])
+        drr = utils.DRR_generation(torch.tensor(CT_out), T.view(1, 6))
 
-        self.drr_win = utils.PlotImage(vis=self.vis, img=drr, win=self.drr_win, title="DRR")
-        # ct_min = np.min(np.min(np.min(CT_out, axis=0), axis=0), axis=0)
-        # ct_max = np.max(np.max(np.max(CT_out, axis=0), axis=0), axis=0)
-        ct_mean = np.mean(np.mean(np.mean(CT_out, axis=0), axis=0), axis=0)
-        ct_std = np.std(CT_out)
+        # im = drr.view((960, 1240)).cpu().numpy()
+        # self.drr_win = utils.PlotImage(vis=self.vis, img=im, win=self.drr_win, title="DRR")
+
+        ct_mean = torch.mean(CT_out)
+        ct_std = torch.std(CT_out)
         CT_out = (CT_out - ct_mean) / ct_std
 
-        return self.transform(CT_out.squeeze()), self.transform(drr), self.transform(T)
+        return CT_out, drr, T
 
     def __len__(self):
         return self.rotation.size

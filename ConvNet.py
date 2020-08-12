@@ -116,9 +116,10 @@ class Net_split(nn.Module):
     def forward(self, x, xray):
         # CT
 
+        x = F.interpolate(x, (128, 128, 128))
         out = self.map1(x)
         out = F.relu(self.bn1(out))
-        out = nn.AdaptiveMaxPool3d((128, 128, 131))(out)
+        out = nn.AdaptiveMaxPool3d((128, 128, 128))(out)
 
         out = self.map2(out)
         out = F.relu(self.bn2(out))
@@ -152,6 +153,7 @@ class Net_split(nn.Module):
         out_ct = F.relu(self.fc_ct(out))
 
         # X-ray
+        xray = F.interpolate(xray, (xray.shape[2] // 2, xray.shape[3] // 2))
         out = self.conv1(xray)
         out = F.relu(self.bn1_x(out))
         out = nn.AdaptiveMaxPool2d((128, 128))(out)
@@ -191,7 +193,7 @@ class Net_split(nn.Module):
         out = F.relu(self.fc1(out))
         out = F.relu(self.fc2(out))
         out = F.relu(self.fc3(out))
-        out = torch.sigmoid(self.fc_out(out))
+        out = self.fc_out(out)
 
 
 
@@ -228,7 +230,7 @@ class layer6Net(nn.Module):
 
     def forward(self, x, xray):
         # CT
-
+        x = F.interpolate(x, (128, 128, 128))
         out = self.map1(x)
         # out = F.relu(self.bn1(out))
         out = F.relu(out)
@@ -248,6 +250,7 @@ class layer6Net(nn.Module):
         out_ct = F.relu(self.fc_ct(out))
 
         # X-ray
+        xray = F.interpolate(xray, (xray.shape[2]//2, xray.shape[3]//2))
         out = self.conv1(xray)
         # out = F.relu(self.bn1_x(out))
         out = F.relu(out)
@@ -271,7 +274,7 @@ class layer6Net(nn.Module):
         out = F.relu(self.fc1(out))
         out = F.relu(self.fc2(out))
         out = F.relu(self.fc3(out))
-        out = torch.sigmoid(self.fc_out(out))
+        out = self.fc_out(out)
 
 
 

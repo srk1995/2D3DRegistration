@@ -12,19 +12,22 @@ def ReadText(vis):
     testwindow = vis.text("Hello World!")
     return 0
 
-def PlotImage(vis, img, win, title=""):
+
+def PlotImage(vis, img, win, env, title=""):
     # img = img.detach.cpu().numpy()
-    win = vis.images(img, win=win, opts=dict(title=title))
+    win = vis.images(img, win=win, opts=dict(title=title), env=env)
     return win
 
-def PlotLoss(vis, x, y, win, title=""):
+
+def PlotLoss(vis, x, y, win, env, legend, title=""):
     if win == None:
-        win = vis.line(Y=y, X=x, win=win, opts=dict(title=title, showlegend=True))
+        win = vis.line(Y=y, X=x, win=win, opts=dict(title=title, legend=legend, showlegend=True), env=env)
     else:
-        win = vis.line(Y=y, X=x, win=win, opts=dict(title=title, showlegend=True),
+        win = vis.line(Y=y, X=x, win=win, opts=dict(title=title, legend=legend, showlegend=True), env=env,
                        update='append')
         # win = vis.line(Y=y, X=x, win=win, opts=dict(title=title, legend=['Train', 'Validation'], showlegend=True), update='append')
     return win
+
 
 def crop_image(image, label, j):
     sz = image.size()
@@ -181,7 +184,7 @@ def raycasting(CT, R_pred, num, R_):
     # print(proj_im.max())
     return proj_im
 
-def DRR_generation(CT, R_):
+def DRR_generation(CT, R_pred):
     """
     :param CT:
     :param R_pred:
@@ -194,8 +197,8 @@ def DRR_generation(CT, R_):
     proj_pix = [960, 1240]
 
     # Camera matrix
-    # R_pred = R_pred.cpu().detach().numpy()
-    R_pred = R_.cpu().numpy()
+    R_pred = R_pred.cpu().detach().numpy()
+    # R_pred = R_.cpu().numpy()
     Rx = R.from_euler('x', R_pred[:, 0], degrees=True)
     Ry = R.from_euler('y', R_pred[:, 1], degrees=True)
     Rz = R.from_euler('z', R_pred[:, 2], degrees=True)
@@ -238,20 +241,18 @@ def DRR_generation(CT, R_):
 
     n_backp = (backp - (min_v + max_v)/2) / ((max_v - min_v)/2)
 
-    tt = n_backp.cpu().numpy()
+    # tt = n_backp.cpu().numpy()
 
     # Set the distance between camera center and object
 
     # Backproject to the world coordinate
     V = CT.cuda()
-    V = V.view((1, 1, V.size(1), 512, 512))
+    V = V.view((1, V.size(0), V.size(1), V.size(2), V.size(3)))
     n_backp = torch.tensor(n_backp, dtype=torch.float32).cuda().view((1, proj_pix[0], proj_pix[1], (s_max-s_min)//ss, 3)).permute(0, 3, 1, 2, 4)
     g = torch.nn.functional.grid_sample(V, n_backp, mode='bilinear', padding_mode='border')
-    proj_im = torch.sum(g, dim=2)
-    # print(proj_im.max())
-    tt = proj_im.cpu().numpy().squeeze()
-    tt = (tt - tt.min()) / tt.max()
-    # cv2.imshow('img', tt)
-    # cv2.waitKey(0)
-    # cv2.destroyAllWindows()
-    return tt
+
+    proj_im = torch.sum(g, dim=2).view((1, proj_pix[0], proj_pix[1]))
+    proj_im_mean = torch.mean(proj_im)
+    proj_im_std = torch.std(proj_im)
+    proj_im = (proj_im - proj_im_mean) / proj_im_std
+    return proj_im
