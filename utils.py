@@ -184,7 +184,7 @@ def raycasting(CT, R_pred, num, R_):
     # print(proj_im.max())
     return proj_im
 
-def DRR_generation(CT, R_pred):
+def DRR_generation(CT, R_pred, num):
     """
     :param CT:
     :param R_pred:
@@ -194,7 +194,7 @@ def DRR_generation(CT, R_pred):
     """
 
     ct_pix = [512, 512]
-    proj_pix = [960, 1240]
+    proj_pix = [256, 256]
 
     # Camera matrix
     R_pred = R_pred.cpu().detach().numpy()
@@ -204,13 +204,13 @@ def DRR_generation(CT, R_pred):
     Rz = R.from_euler('z', R_pred[:, 2], degrees=True)
     r = Rx * Ry * Rz
 
-    t = torch.tensor(np.array([[R_pred[:, 3]], [R_pred[:, 4]], [R_pred[:, 5]]]))
+    t = torch.tensor(np.array([[R_pred[:, 3]], [R_pred[:, 4]], [R_pred[:, 5]]])).cuda(1)
     f = 0.5
-    K = torch.tensor([[f, 0, proj_pix[0]/2], [0, f, proj_pix[1]/2], [0, 0, 1]], dtype=torch.float32)
-    rot = torch.tensor(r.as_dcm(), dtype=torch.float32)
+    K = torch.tensor([[f, 0, proj_pix[0]/2], [0, f, proj_pix[1]/2], [0, 0, 1]], dtype=torch.float32).cuda(1)
+    rot = torch.tensor(r.as_dcm(), dtype=torch.float32).cuda(1)
 
     # Assign image coordinate
-    s_min, s_max = -200, 200
+    s_min, s_max = -150, 150
     ss = 1
     img_pts = np.array([np.mgrid[1:proj_pix[1]+1, 1:proj_pix[0]+1].T.reshape(-1, 2)] * ((s_max-s_min)//ss))
 
@@ -224,31 +224,31 @@ def DRR_generation(CT, R_pred):
 
     img_pts = img_pts.reshape(((s_max-s_min)//ss, proj_pix[0], proj_pix[1], 3)).transpose((3, 0, 1, 2)).reshape(3, -1, 1)
 
-    img_pts = torch.tensor(np.tile(img_pts, (1, 1, 1)).transpose((2, 0, 1)))
+    img_pts = torch.tensor(np.tile(img_pts, (1, 1, num)).transpose((2, 0, 1))).cuda(1)
     backp = torch.matmul(torch.matmul(torch.inverse(rot), torch.inverse(K)),
-                      img_pts - torch.matmul(K, t.view((3, 1))).T.reshape((1, 3, 1)))
-    backp = backp.view((1, 3, (s_max-s_min)//ss, -1)).permute((0, 3, 2, 1))  # num, -1, 200, 3
+                      img_pts - torch.matmul(K, t.view((3, num))).T.reshape((num, 3, 1)))
+    backp = backp.view((num, 3, (s_max-s_min)//ss, -1)).permute((0, 3, 2, 1))  # num, -1, 200, 3
 
     # x = np.linspace(-ct_pix[0]/2, ct_pix[0]/2 -1, 512)
-    # y = np.linspace(-ct_pix[1] / 2, ct_pix[1] / 2 -1, 512)
+    # y = np.linspace(-ct_pix[1] / 2, ct_.cuda()pix[1] / 2 -1, 512)
     # z = np.linspace(-CT.size(1)/2, CT.size(1)/2-1, CT.size(1))
     #
     # tt = cartesian_product(x, y, z)
 
 
-    min_v = np.array([-(ct_pix[0]-1)/2, -(ct_pix[1]-1)/2, -(CT.size(1)-1)/2])
-    max_v = np.array([(ct_pix[0]-1)/2, (ct_pix[1]-1)/2, (CT.size(1)-1)/2])
+    min_v = torch.tensor(np.array([-(ct_pix[0]-1)/2, -(ct_pix[1]-1)/2, -(CT.size(1)-1)/2]), dtype=torch.float32).cuda(1)
+    max_v = torch.tensor(np.array([(ct_pix[0]-1)/2, (ct_pix[1]-1)/2, (CT.size(1)-1)/2]), dtype=torch.float32).cuda(1)
 
     n_backp = (backp - (min_v + max_v)/2) / ((max_v - min_v)/2)
-
     # tt = n_backp.cpu().numpy()
 
     # Set the distance between camera center and object
 
     # Backproject to the world coordinate
-    V = CT.cuda()
-    V = V.view((1, V.size(0), V.size(1), V.size(2), V.size(3)))
-    n_backp = torch.tensor(n_backp, dtype=torch.float32).cuda().view((1, proj_pix[0], proj_pix[1], (s_max-s_min)//ss, 3)).permute(0, 3, 1, 2, 4)
+    V = CT.cuda(1)
+    V = V.view((num, V.size(0), V.size(1), V.size(2), V.size(3)))
+    n_backp = n_backp.view((1, proj_pix[0], proj_pix[1], (s_max - s_min) // ss, 3)).permute(0, 3, 1, 2, 4)
+    # n_backp = torch.tensor(n_backp, dtype=torch.float32).view((1, proj_pix[0], proj_pix[1], (s_max-s_min)//ss, 3)).permute(0, 3, 1, 2, 4)
     g = torch.nn.functional.grid_sample(V, n_backp, mode='bilinear', padding_mode='border')
 
     proj_im = torch.sum(g, dim=2).view((1, proj_pix[0], proj_pix[1]))
