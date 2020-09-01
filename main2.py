@@ -22,12 +22,6 @@ def transform(img):
     img_tensor = img_tensor.float() / max_value
     return img_tensor
 
-def custom_loss(output, labels, drr, xray):
-    mse = torch.nn.MSELoss()
-    loss = alpha * mse(output, labels) + beta * mse(drr, xray)
-    # loss = mse(drr, xray)
-    return loss
-
 
 train_root = '/home/srk1995/pub/db/Dicom_Image_Unet_pseudo/Train/'
 test_root = '/home/srk1995/pub/db/Dicom_Image_Unet_pseudo/Test/'
@@ -36,10 +30,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 vis = visdom.Visdom()
 
 train_batch_num = 1
-alpha = 1
 beta = 1e-2
 
 proj_pix = [256, 256]
+mse = torch.nn.MSELoss()
 
 
 
@@ -60,7 +54,7 @@ test_dataset = SegData(test_root, transform=transfroms_)
 trainloader = DataLoader(train_dataset, batch_size=train_batch_num, shuffle=True, num_workers=0)
 testloader = DataLoader(test_dataset, batch_size=train_batch_num, shuffle=False, num_workers=0)
 
-net = ConvNet.UNet(1, 8, 6)
+net = ConvNet.UNet(1, 16, 6)
 net = net.cuda()
 net = nn.DataParallel(net)
 
@@ -88,7 +82,7 @@ def train(net, loader, optimizer, drr_win, xray_win, env):
         outputs = net(inputs, inputs_X)
 
         drr = utils.DRR_generation(data[0].view(1, inputs.shape[2], inputs.shape[3], inputs.shape[4]), outputs, train_batch_num).view((1, proj_pix[0], proj_pix[1]))
-        loss = custom_loss(outputs, labels, drr, data[1].cuda(1))
+        loss = mse(outputs, labels) + beta * mse(drr, data[1].cuda(1))
 
         loss.backward()
         optimizer.step()
@@ -97,7 +91,7 @@ def train(net, loader, optimizer, drr_win, xray_win, env):
                                    title="Train X-ray")
         drr_win = utils.PlotImage(vis=vis, img=drr[0].cpu().numpy().squeeze(), win=drr_win, env=env, title="Train DRR")
 
-        train_loss += loss.item()
+        train_loss += mse(outputs, labels).item() + mse(drr, data[1].cuda(1))
         num += data[0].size(0)
 
     return train_loss / num, drr_win, xray_win
@@ -120,11 +114,11 @@ def test(net, loader, optimizer, drr_win, xray_win, env):
         outputs = net(inputs, inputs_X)
 
         drr = utils.DRR_generation(data[0].view(1, inputs.shape[2], inputs.shape[3], inputs.shape[4]), outputs, train_batch_num).view((1, proj_pix[0], proj_pix[1]))
-        loss = custom_loss(outputs, labels, drr, data[1].cuda(1))
+        loss = mse(outputs, labels) + mse(drr, data[1].cuda(1))
 
         xray_win = utils.PlotImage(vis=vis, img=data[1][0].cpu().numpy().squeeze(), win=xray_win, env=env,
-                                   title="Test X-ray")
-        drr_win = utils.PlotImage(vis=vis, img=drr[0].cpu().numpy().squeeze(), win=drr_win, env=env, title="Test DRR")
+                                   title="Test X-ray_1e2")
+        drr_win = utils.PlotImage(vis=vis, img=drr[0].cpu().numpy().squeeze(), win=drr_win, env=env, title="Test DRR_1e2")
 
         test_loss += loss.item()
         num += data[0].size(0)
@@ -135,7 +129,15 @@ def test(net, loader, optimizer, drr_win, xray_win, env):
 if __name__ == "__main__":
     env = "seg_unet"
     vis.close(env="seg_unet")
-    for epoch in range(200):
+    if os.path.isfile("./saved/BEST_unet.pth"):
+        ck = torch.load("./saved/BEST_unet.pth")
+        net.load_state_dict(ck['state_dict'])
+        optimizer.load_state_dict(ck['optimizer'])
+        start = ck['epoch']
+        best_loss = ck['best_loss']
+    else:
+        start = 0
+    for epoch in range(start, 200):
         train_loss, train_drr_win, train_xray_win = train(net, trainloader, optimizer, train_drr_win, train_xray_win, env)
         test_loss, test_drr_win, test_xray_win = test(net, testloader, optimizer, test_drr_win, test_xray_win, env)
         # train_scheduler.step(epoch)
@@ -159,6 +161,6 @@ if __name__ == "__main__":
                 'state_dict': net.state_dict(),
                 'best_loss': best_loss,
                 'optimizer': optimizer.state_dict(),
-            }, PATH + 'BEST_6layer.pth')
+            }, PATH + 'BEST_unet.pth')
 
     print('Finished Training')

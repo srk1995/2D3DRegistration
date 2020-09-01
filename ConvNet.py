@@ -4,73 +4,129 @@ import torch.nn.functional as F
 
 from unet.unet_parts import *
 
+def double_conv(in_channels, out_channels):
+    return nn.Sequential(
+        nn.Conv2d(in_channels, out_channels, 3, padding=1),
+        nn.ReLU(inplace=True),
+        nn.Conv2d(out_channels, out_channels, 3, padding=1),
+        nn.ReLU(inplace=True)
+    )
+
+def double_conv3(in_channels, out_channels):
+    return nn.Sequential(
+        nn.Conv3d(in_channels, out_channels, 3, padding=1),
+        nn.ReLU(inplace=True),
+        nn.Conv3d(out_channels, out_channels, 3, padding=1),
+        nn.ReLU(inplace=True)
+    )
+
+
 class UNet(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, bilinear=False):
-        super(UNet, self).__init__()
-        # layers for CT
-        self.n_channels = input_size
-        self.bilinear = bilinear
-        self.sz = 64
 
-        self.inc = DoubleConv3(input_size, hidden_size)
-        self.down1 = Down3(hidden_size, hidden_size * 2, self.sz)
-        self.down2 = Down3(hidden_size * 2, hidden_size * 4, self.sz // 2)
-        self.down3 = Down3(hidden_size * 4, hidden_size * 8, self.sz // 4)
-        factor = 2 if bilinear else 1
+    def __init__(self, input, hidden, n_class):
+        super().__init__()
 
-        self.up1 = Up3(hidden_size * 8, hidden_size * 4 // factor)
-        self.up2 = Up3(hidden_size * 4, hidden_size * 2 // factor, bilinear)
-        self.up3 = Up3(hidden_size * 2, hidden_size, bilinear)
-        self.outc = OutConv3(hidden_size, 1)
+        self.dconv_down1 = double_conv3(input, hidden)
+        self.dconv_down2 = double_conv3(hidden, hidden*2)
+        self.dconv_down3 = double_conv3(hidden*2, hidden*4)
+        self.dconv_down4 = double_conv3(hidden*4, hidden*8)
 
-        # # layers for X-ray
-        self.inc_x = DoubleConv(input_size, hidden_size)
-        self.down1_x = Down(hidden_size, hidden_size * 2, self.sz)
-        self.down2_x = Down(hidden_size * 2, hidden_size * 4, self.sz // 2)
-        self.down3_x = Down(hidden_size * 4, hidden_size * 8, self.sz // 4)
-        factor = 2 if bilinear else 1
+        self.maxpool = nn.MaxPool3d(2)
+        self.upsample = nn.Upsample(scale_factor=2, mode='trilinear', align_corners=True)
 
-        self.up1_x = Up(hidden_size * 8, hidden_size * 4 // factor)
-        self.up2_x = Up(hidden_size * 4, hidden_size * 2 // factor, bilinear)
-        self.up3_x = Up(hidden_size * 2, hidden_size, bilinear)
-        self.outc_x = OutConv(hidden_size, 1)
+        self.dconv_up3 = double_conv3(hidden*4 + hidden*8, hidden*4)
+        self.dconv_up2 = double_conv3(hidden*2 + hidden*4, hidden*2)
+        self.dconv_up1 = double_conv3(hidden*2 + hidden, hidden)
 
-        self.fc1 = nn.Linear(128*128*129, 128*128)
-        self.fc2 = nn.Linear(128 * 128, 1024)
-        self.fc3 = nn.Linear(1024, 6)
+        self.conv_last = nn.Conv3d(hidden, 1, 1)
+        self.fc_ct = nn.Linear(64*64*64, 128)
 
+        self.dconv_down1_x = double_conv(input, hidden)
+        self.dconv_down2_x = double_conv(hidden, hidden*2)
+        self.dconv_down3_x = double_conv(hidden*2, hidden*4)
+        self.dconv_down4_x = double_conv(hidden*4, hidden*8)
+
+        self.maxpool_x = nn.MaxPool2d(2)
+        self.upsample_x = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+
+        self.dconv_up3_x = double_conv(hidden*4 + hidden*8, hidden*4)
+        self.dconv_up2_x = double_conv(hidden*2 + hidden*4, hidden*2)
+        self.dconv_up1_x = double_conv(hidden*2 + hidden, hidden)
+
+        self.conv_last_x = nn.Conv2d(hidden, 1, 1)
+        self.fc_x = nn.Linear(64 * 64, 128)
+
+
+        self.fc = nn.Linear(256, 6)
 
     def forward(self, x, xray):
-        # CT
         x = F.interpolate(x, (128, 128, 128))
-        x1 = self.inc(x)
-        x2 = self.down1(x1)
-        x3 = self.down2(x2)
-        x4 = self.down3(x3)
+        conv1 = self.dconv_down1(x)
+        x = self.maxpool(conv1)
 
-        x = self.up1(x4, x3)
-        x = self.up2(x, x2)
-        x = self.up3(x, x1)
-        logits = self.outc(x)
+        conv2 = self.dconv_down2(x)
+        x = self.maxpool(conv2)
+
+        conv3 = self.dconv_down3(x)
+        x = self.maxpool(conv3)
+
+        x = self.dconv_down4(x)
+
+        x = self.upsample(x)
+        x = torch.cat([x, conv3], dim=1)
+
+        x = self.dconv_up3(x)
+        x = self.upsample(x)
+        x = torch.cat([x, conv2], dim=1)
+
+        x = self.dconv_up2(x)
+        x = self.upsample(x)
+        x = torch.cat([x, conv1], dim=1)
+
+        x = self.dconv_up1(x)
+
+        out = F.relu(self.conv_last(x))
+        out = self.maxpool(out)
+        out = self.fc_ct(out.view((1, -1)))
+
+
 
         # X-ray
-        xray = F.interpolate(xray, (xray.shape[2] // 2, xray.shape[3] // 2))
-        x1 = self.inc_x(xray)
-        x2 = self.down1_x(x1)
-        x3 = self.down2_x(x2)
-        x4 = self.down3_x(x3)
+        xray = F.interpolate(xray, (128, 128))
+        conv1 = self.dconv_down1_x(xray)
+        x = self.maxpool_x(conv1)
 
-        x = self.up1_x(x4, x3)
-        x = self.up2_x(x, x2)
-        x = self.up3_x(x, x1)
-        logits_x = self.outc_x(x)
+        conv2 = self.dconv_down2_x(x)
+        x = self.maxpool_x(conv2)
 
-        v = torch.cat([logits.view(-1), logits_x.view(-1)])
-        out = self.fc1(v)
-        out = self.fc2(out)
-        out = self.fc3(out)
+        conv3 = self.dconv_down3_x(x)
+        x = self.maxpool_x(conv3)
 
-        return logits
+        x = self.dconv_down4_x(x)
+
+        x = self.upsample_x(x)
+        x = torch.cat([x, conv3], dim=1)
+
+        x = self.dconv_up3_x(x)
+        x = self.upsample_x(x)
+        x = torch.cat([x, conv2], dim=1)
+
+        x = self.dconv_up2_x(x)
+        x = self.upsample_x(x)
+        x = torch.cat([x, conv1], dim=1)
+
+        x = self.dconv_up1_x(x)
+
+        out_x = F.relu(self.conv_last_x(x))
+        out_x = self.maxpool_x(out_x)
+        out_x = self.fc_x(out_x.view((1, -1)))
+
+        out = torch.cat((out, out_x), dim=-1)
+        out = self.fc(out)
+
+
+
+        return out
 
 
 class Net_split(nn.Module):
@@ -286,6 +342,102 @@ class layer6Net(nn.Module):
 
 
         return out
+
+
+class layer8Net(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size):
+        super(layer8Net, self).__init__()
+        # layers for CT
+        self.map1 = nn.Conv3d(input_size, hidden_size*2, 5, padding=2, bias=False)
+        self.bn1 = nn.BatchNorm3d(hidden_size*2)
+        self.map2 = nn.Conv3d(hidden_size*2, hidden_size*2, 5, padding=2, bias=False)
+        self.bn2 = nn.BatchNorm3d(hidden_size*2)
+        self.map3 = nn.Conv3d(hidden_size*2, hidden_size*4, 5, padding=2, bias=False)
+        self.bn3 = nn.BatchNorm3d(hidden_size*4)
+        self.map4 = nn.Conv3d(hidden_size*4, hidden_size*4, 5, padding=2, bias=False)
+        self.bn4 = nn.BatchNorm3d(hidden_size*4)
+        self.fc_ct = nn.Linear(hidden_size*4*32*32*32, output_size*2)
+
+        # layers for X-ray
+        self.conv1 = nn.Conv2d(input_size, hidden_size*2, 3, padding=1)
+        self.bn1_x = nn.BatchNorm2d(hidden_size*2)
+        self.conv2 = nn.Conv2d(hidden_size*2, hidden_size*2, 3, padding=1)
+        self.bn2_x = nn.BatchNorm2d(hidden_size*2)
+        self.conv3 = nn.Conv2d(hidden_size*2, hidden_size*4, 3, padding=1)
+        self.bn3_x = nn.BatchNorm2d(hidden_size*4)
+        self.conv4 = nn.Conv2d(hidden_size*4, hidden_size*4, 3, padding=1)
+        self.bn4_x = nn.BatchNorm2d(hidden_size*4)
+        self.fc_x = nn.Linear(hidden_size * 4 * 32 * 32, output_size * 2)
+
+
+        self.fc1 = nn.Linear(output_size * 4, output_size * 3)
+        self.fc2 = nn.Linear(output_size * 3, output_size * 2)
+        self.fc3 = nn.Linear(output_size * 2, output_size)
+        self.fc_out = nn.Linear(output_size, output_size)
+
+
+    def forward(self, x, xray):
+        # CT
+        x = F.interpolate(x, (128, 128, 128))
+        out = self.map1(x)
+        out = F.relu(self.bn1(out))
+        # out = F.relu(out)
+        out = nn.AdaptiveMaxPool3d((128, 128, 128))(out)
+
+        out = self.map2(out)
+        out = F.relu(self.bn2(out))
+        # out = F.relu(out)
+        out = nn.AdaptiveMaxPool3d((64, 64, 64))(out)
+
+        out = self.map3(out)
+        out = F.relu(self.bn3(out))
+        # out = F.relu(out)
+        out = nn.AdaptiveMaxPool3d((32, 32, 32))(out)
+
+        out = self.map4(out)
+        out = F.relu(self.bn4(out))
+        # out = F.relu(out)
+        out = nn.AdaptiveMaxPool3d((32, 32, 32))(out)
+
+        out = out.view((1, -1))
+        out_ct = F.relu(self.fc_ct(out))
+
+        # X-ray
+        xray = F.interpolate(xray, (xray.shape[2]//2, xray.shape[3]//2))
+        out = self.conv1(xray)
+        out = F.relu(self.bn1_x(out))
+        # out = F.relu(out)
+        out = nn.AdaptiveMaxPool2d((128, 128))(out)
+
+        out = self.conv2(out)
+        out = F.relu(self.bn2_x(out))
+        # out = F.relu(out)
+        out = nn.AdaptiveMaxPool2d((64, 64))(out)
+
+        out = self.conv3(out)
+        out = F.relu(self.bn3_x(out))
+        # out = F.relu(out)
+        out = nn.AdaptiveMaxPool2d((32, 32))(out)
+
+        out = self.conv4(out)
+        out = F.relu(self.bn4_x(out))
+        # out = F.relu(out)
+        out = nn.AdaptiveMaxPool2d((32, 32))(out)
+
+
+        out = out.view((1, -1))
+        out_xray = F.relu(self.fc_x(out))
+
+        out = torch.cat((out_ct, out_xray), dim=-1)
+        out = F.relu(self.fc1(out))
+        out = F.relu(self.fc2(out))
+        out = F.relu(self.fc3(out))
+        out = self.fc_out(out)
+
+
+
+        return out
+
 
 if __name__ == "__main__":
     # The number of block is 5.

@@ -3,9 +3,7 @@ import torch.nn as nn
 import torch
 from torch.nn import functional as F
 from scipy.spatial.transform import Rotation as R
-import cv2
-from scipy.interpolate import RegularGridInterpolator, LinearNDInterpolator, interp1d
-import itertools
+import scipy.io as sio
 
 
 def ReadText(vis):
@@ -196,38 +194,43 @@ def DRR_generation(CT, R_pred, num):
     ct_pix = [512, 512]
     proj_pix = [256, 256]
 
+    min_v = torch.tensor(np.array([-(ct_pix[0]-1)/2, -(ct_pix[1]-1)/2, -(CT.size(1)-1)/2]), dtype=torch.float32).cuda(1)
+    max_v = torch.tensor(np.array([(ct_pix[0]-1)/2, (ct_pix[1]-1)/2, (CT.size(1)-1)/2]), dtype=torch.float32).cuda(1)
+
     # Camera matrix
-    R_pred = R_pred.cpu().detach().numpy()
+    # R_pred = R_pred.cpu().detach().numpy()
+    R_pred = np.array([[0, 0, 0, 0, 0, 300]], dtype=np.float32)
     # R_pred = R_.cpu().numpy()
-    Rx = R.from_euler('x', R_pred[:, 0], degrees=True)
-    Ry = R.from_euler('y', R_pred[:, 1], degrees=True)
-    Rz = R.from_euler('z', R_pred[:, 2], degrees=True)
+    Rx = R.from_euler('x', -R_pred[:, 0], degrees=True)
+    Ry = R.from_euler('y', -R_pred[:, 1], degrees=True)
+    Rz = R.from_euler('z', -R_pred[:, 2], degrees=True)
     r = Rx * Ry * Rz
 
-    t = torch.tensor(np.array([[R_pred[:, 3]], [R_pred[:, 4]], [R_pred[:, 5]]])).cuda(1)
-    f = 0.5
+    t = torch.tensor(-np.array([[R_pred[:, 3]], [R_pred[:, 4]], [R_pred[:, 5]]])).cuda(1)
+    # t = (t - (min_v.reshape(3, 1, 1) + max_v.reshape(3, 1, 1))/2) / ((max_v.reshape(3, 1, 1) - min_v.reshape(3, 1, 1))/2)
+    f = 1
     K = torch.tensor([[f, 0, proj_pix[0]/2], [0, f, proj_pix[1]/2], [0, 0, 1]], dtype=torch.float32).cuda(1)
     rot = torch.tensor(r.as_dcm(), dtype=torch.float32).cuda(1)
 
     # Assign image coordinate
-    s_min, s_max = -150, 150
-    ss = 1
-    img_pts = np.array([np.mgrid[1:proj_pix[1]+1, 1:proj_pix[0]+1].T.reshape(-1, 2)] * ((s_max-s_min)//ss))
+    s_min, s_max = 0, 10
+    ss = 1/20
+    img_pts = np.array([np.mgrid[1:proj_pix[1]+1, 1:proj_pix[0]+1].T.reshape(-1, 2)] * int(((s_max-s_min)/ss)))
 
     # img_pts = img_pts.reshape(-1, 2)
-    img_pts = torch.tensor(img_pts).view((-1, 2))
+    img_pts = torch.tensor(img_pts, dtype=torch.float32).view((-1, 2))
 
-    s = torch.tensor(np.mgrid[s_min:s_max:ss].repeat(proj_pix[0] * proj_pix[1]))
+    s = torch.tensor(np.mgrid[s_min:s_max:ss].repeat(proj_pix[0] * proj_pix[1]), dtype=torch.float32)
     s = s.view((-1, 1))
 
-    img_pts = torch.cat([img_pts, s], dim=-1).numpy()
+    img_pts = torch.cat([img_pts*s, s], dim=-1).numpy()
 
-    img_pts = img_pts.reshape(((s_max-s_min)//ss, proj_pix[0], proj_pix[1], 3)).transpose((3, 0, 1, 2)).reshape(3, -1, 1)
+    img_pts = img_pts.reshape((int((s_max-s_min)/ss), proj_pix[0], proj_pix[1], 3)).transpose((3, 0, 1, 2)).reshape(3, -1, 1)
 
     img_pts = torch.tensor(np.tile(img_pts, (1, 1, num)).transpose((2, 0, 1))).cuda(1)
     backp = torch.matmul(torch.matmul(torch.inverse(rot), torch.inverse(K)),
                       img_pts - torch.matmul(K, t.view((3, num))).T.reshape((num, 3, 1)))
-    backp = backp.view((num, 3, (s_max-s_min)//ss, -1)).permute((0, 3, 2, 1))  # num, -1, 200, 3
+    backp = backp.view((num, 3, int((s_max-s_min)/ss), -1)).permute((0, 3, 2, 1))  # num, -1, 200, 3
 
     # x = np.linspace(-ct_pix[0]/2, ct_pix[0]/2 -1, 512)
     # y = np.linspace(-ct_pix[1] / 2, ct_.cuda()pix[1] / 2 -1, 512)
@@ -235,11 +238,9 @@ def DRR_generation(CT, R_pred, num):
     #
     # tt = cartesian_product(x, y, z)
 
-
-    min_v = torch.tensor(np.array([-(ct_pix[0]-1)/2, -(ct_pix[1]-1)/2, -(CT.size(1)-1)/2]), dtype=torch.float32).cuda(1)
-    max_v = torch.tensor(np.array([(ct_pix[0]-1)/2, (ct_pix[1]-1)/2, (CT.size(1)-1)/2]), dtype=torch.float32).cuda(1)
-
-    n_backp = (backp - (min_v + max_v)/2) / ((max_v - min_v)/2)
+    # n_backp = (backp - (min_v + max_v)/2) / ((max_v - min_v)/2)
+    n_backp = backp
+    sio.savemat('CT_ray.mat', {'CT': CT.numpy(), 'ray':backp.cpu().numpy()})
     # tt = n_backp.cpu().numpy()
 
     # Set the distance between camera center and object
@@ -256,3 +257,70 @@ def DRR_generation(CT, R_pred, num):
     proj_im_std = torch.std(proj_im)
     proj_im = (proj_im - proj_im_mean) / proj_im_std
     return proj_im
+
+
+def TRE(CT, R_gt, R_pred, num):
+    """
+    :param CT:
+    :param R_pred:
+    :param num:
+    :param R_:
+    :return:
+    """
+
+    ct_pix = [512, 512]
+    proj_pix = [256, 256]
+
+    # Camera matrix
+    R_pred = R_pred.cpu().detach().numpy()
+    # R_pred = R_.cpu().numpy()
+    Rx = R.from_euler('x', R_pred[:, 0], degrees=True)
+    Ry = R.from_euler('y', R_pred[:, 1], degrees=True)
+    Rz = R.from_euler('z', R_pred[:, 2], degrees=True)
+    r = Rx * Ry * Rz
+
+    rot_hat = torch.tensor(r.as_dcm(), dtype=torch.float32)
+    t_hat = torch.tensor(np.array([[R_pred[:, 3]], [R_pred[:, 4]], [R_pred[:, 5]]]))
+
+    R_gt = R_gt.cpu().detach().numpy()
+    Rx = R.from_euler('x', R_gt[:, 0], degrees=True)
+    Ry = R.from_euler('y', R_gt[:, 1], degrees=True)
+    Rz = R.from_euler('z', R_gt[:, 2], degrees=True)
+    r = Rx * Ry * Rz
+
+    rot = torch.tensor(r.as_dcm(), dtype=torch.float32)
+    t = torch.tensor(np.array([[R_gt[:, 3]], [R_gt[:, 4]], [R_gt[:, 5]]]))
+
+
+    f = 0.5
+    K = torch.tensor([[f, 0, proj_pix[0]/2], [0, f, proj_pix[1]/2], [0, 0, 1]], dtype=torch.float32)
+
+
+    x = np.linspace(-ct_pix[0]/2, ct_pix[0]/2 -1, 512)
+    y = np.linspace(-ct_pix[1] / 2, ct_pix[1] / 2 -1, 512)
+    z = np.linspace(-CT.size(1)/2, CT.size(1)/2-1, CT.size(1))
+
+    tt = cartesian_product(x, y, z)
+
+    X = torch.matmul(torch.matmul(K, rot), torch.tensor(tt, dtype=torch.float32).T) + torch.matmul(K, t.view(
+        (3, num)))
+    X = X[:, :2, :] / X[:, 2, :]
+
+    X_hat = torch.matmul(torch.matmul(K, rot_hat), torch.tensor(tt, dtype=torch.float32).T) + torch.matmul(K, t_hat.view(
+        (3, num)))
+
+    X_hat = X_hat[:, :2, :] / X_hat[:, 2, :]
+
+    abs_v = torch.abs(X - X_hat)
+    ind = (torch.isnan(abs_v) ).nonzero()
+    ind_f = (torch.isinf(abs_v)).nonzero()
+    for i in range(len(ind)):
+        abs_v[ind[i][0], ind[i][1], ind[i][2]] = 0
+
+    for i in range(len(ind_f)):
+        abs_v[ind_f[i][0], ind_f[i][1], ind_f[i][2]] = 0
+    t_s = torch.sum(abs_v)
+    total_l = abs_v.size(2) - len(ind) - len(ind_f)
+    tre = t_s / total_l
+
+    return tre

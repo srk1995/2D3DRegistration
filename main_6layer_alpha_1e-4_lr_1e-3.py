@@ -14,7 +14,6 @@ import visdom
 from dataloader import SegData_csv
 from torchvision import transforms
 from torch.utils.data import DataLoader
-import cv2
 
 
 def transform(img):
@@ -86,17 +85,10 @@ def train(net, loader, optimizer, drr_win, xray_win, env):
 
         loss.backward()
         optimizer.step()
-        #
-        tt = drr[0].cpu().numpy().squeeze()
-        tt = (tt - tt.min()) / (tt.max() - tt.min())
-        cv2.imshow('img', tt)
-        cv2.waitKey(10)
-
 
         xray_win = utils.PlotImage(vis=vis, img=data[1][0].cpu().numpy().squeeze(), win=xray_win, env=env,
                                    title="Train X-ray")
         drr_win = utils.PlotImage(vis=vis, img=drr[0].cpu().numpy().squeeze(), win=drr_win, env=env, title="Train DRR")
-
 
         train_loss += mse(outputs, labels).item() + mse(drr, data[1].cuda(1)).item()
         num += data[0].size(0)
@@ -144,7 +136,7 @@ if __name__ == "__main__":
         best_loss = ck['best_loss']
     else:
         start = 0
-    for epoch in range(start, 200):
+    for epoch in range(start, 50):
         train_loss, train_drr_win, train_xray_win = train(net, trainloader, optimizer, train_drr_win, train_xray_win,
                                                           env)
         test_loss, test_drr_win, test_xray_win = test(net, testloader, optimizer, test_drr_win, test_xray_win, env)

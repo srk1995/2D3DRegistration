@@ -1,16 +1,14 @@
 import os
-import pydicom as dicom
-import glob
-import matplotlib.pyplot as plt
 import torch
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from torchvision import transforms
-from scipy.spatial.transform import Rotation as R
 import pymesh
-import utils
 import visdom
+import utils
+
+
 
 
 def transform(img):
@@ -114,7 +112,7 @@ class SegData(Dataset):
 
         self.xray_list = []
         for f in self.dlist:
-            self.xray_list.append([os.path.join(f, 'xray_256', x) for x in os.listdir(os.path.join(f, 'xray_256'))])
+            self.xray_list.append([os.path.join(f, 'xray_256_x', x) for x in os.listdir(os.path.join(f, 'xray_256_x'))])
 
         self.xray_list = np.array(self.xray_list).reshape(-1)
         self.drr_win = None
@@ -161,6 +159,53 @@ class SegData(Dataset):
     def __len__(self):
         return len(self.xray_list)
 
+class SegData_csv(Dataset):
+    def __init__(self, file, transform):
+        """
+        :param root: the path of data
+        :param transform: transforms to make the output tensor
+
+        """
+        self.dlist = np.loadtxt(file, delimiter=",", dtype=str)
+        self.transform = transform
+
+        self.drr_win = None
+        self.vis = visdom.Visdom()
+
+        # self.num_samples = len(self.dlist)
+
+    def __getitem__(self, index):
+        """
+
+        :param index:
+        :return: CT_out: [C, D, H, W] == [1, 393, 512, 512]
+        :return drr: [C, H, W]
+        :return T : [6]
+        """
+
+        tt = self.dlist[index, :]
+
+        CT = os.path.join(tt[0])
+
+        CT_out = np.load(CT)
+        CT_out = np.expand_dims(np.array(CT_out, dtype=np.float32), axis=-1).transpose((3, 2, 1, 0))
+        CT_out = torch.tensor(CT_out)
+
+        T = torch.tensor(np.array(tt[1:], dtype=np.float32), dtype=torch.float32)
+
+        xray = utils.DRR_generation(torch.tensor(CT_out), T.view(1, 6), 1)
+
+
+        ct_mean = torch.mean(CT_out)
+        ct_std = torch.std(CT_out)
+        CT_out = (CT_out - ct_mean) / ct_std
+
+        return CT_out, xray, T
+
+    def __len__(self):
+        return len(self.dlist)
+
+
 
 class Kaist_Data(Dataset):
     def __init__(self, root, transform):
@@ -206,18 +251,22 @@ class Kaist_Data(Dataset):
 if __name__ == "__main__":
     # train_path = './registration/2D3D_Data/train'
     # test_path = './registration/2D3D_Data/test'
-    train_path = '/home/srk1995/pub/db/Dicom_Image_Unet_pseudo/Train/'
-    test_path = '/home/srk1995/pub/db/Dicom_Image_Unet_pseudo/Test/'
+    # train_path = '/home/srk1995/pub/db/Dicom_Image_Unet_pseudo/Train/'
+    # test_path = '/home/srk1995/pub/db/Dicom_Image_Unet_pseudo/Test/'
+
+    train_file = './train_256.csv'
+    test_file = './test_256.csv'
+
 
     # cTdataloader = Data(root, transform=transforms.ToTensor())
-    kdata_train = SegData(train_path, transform=transforms.ToTensor())
-    kdata_test = SegData(test_path, transform=transforms.ToTensor())
+    kdata_train = SegData_csv(train_file, transform=transforms.ToTensor())
+    # kdata_test = SegData_csv(test_file, transform=transforms.ToTensor())
 
     # kdata_train = Data(train_path, transform=transforms.ToTensor())
     # kdata_test = Data(test_path, transform=transforms.ToTensor())
 
     trainloader = DataLoader(kdata_train, batch_size=2, shuffle=True, num_workers=0)
-    testloader = DataLoader(kdata_test, batch_size=1, shuffle=False, num_workers=0)
+    # testloader = DataLoader(kdata_test, batch_size=1, shuffle=False, num_workers=0)
     for i, data in enumerate(trainloader):
         print(data)
 

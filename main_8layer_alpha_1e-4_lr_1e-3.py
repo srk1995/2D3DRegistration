@@ -2,7 +2,7 @@ from utils import CE, crop_image, dice_loss
 from sklearn.metrics import confusion_matrix
 import os
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "9,8"
+os.environ["CUDA_VISIBLE_DEVICES"] = "8,9"
 import ConvNet
 import dataloader
 import torch.optim as optim
@@ -14,7 +14,6 @@ import visdom
 from dataloader import SegData_csv
 from torchvision import transforms
 from torch.utils.data import DataLoader
-import cv2
 
 
 def transform(img):
@@ -54,7 +53,7 @@ test_dataset = SegData_csv(test_file, transform=transfroms_)
 trainloader = DataLoader(train_dataset, batch_size=train_batch_num, shuffle=True, num_workers=0)
 testloader = DataLoader(test_dataset, batch_size=train_batch_num, shuffle=False, num_workers=0)
 
-net = ConvNet.layer6Net(1, 20, 6)
+net = ConvNet.layer8Net(1, 20, 6)
 net = net.cuda()
 net = nn.DataParallel(net)
 
@@ -86,17 +85,10 @@ def train(net, loader, optimizer, drr_win, xray_win, env):
 
         loss.backward()
         optimizer.step()
-        #
-        tt = drr[0].cpu().numpy().squeeze()
-        tt = (tt - tt.min()) / (tt.max() - tt.min())
-        cv2.imshow('img', tt)
-        cv2.waitKey(10)
-
 
         xray_win = utils.PlotImage(vis=vis, img=data[1][0].cpu().numpy().squeeze(), win=xray_win, env=env,
                                    title="Train X-ray")
         drr_win = utils.PlotImage(vis=vis, img=drr[0].cpu().numpy().squeeze(), win=drr_win, env=env, title="Train DRR")
-
 
         train_loss += mse(outputs, labels).item() + mse(drr, data[1].cuda(1)).item()
         num += data[0].size(0)
@@ -134,7 +126,7 @@ def test(net, loader, optimizer, drr_win, xray_win, env):
 
 
 if __name__ == "__main__":
-    env = "seg_6layer_alpha_1e-4_lr_1e-3"
+    env = "seg_8layer_alpha_1e-4_lr_1e-3"
     # vis.close(env="seg_6layer")
     if os.path.isfile("./saved/BEST" + env[3:] + ".pth"):
         ck = torch.load("./saved/BEST" + env[3:] + ".pth")
@@ -144,7 +136,7 @@ if __name__ == "__main__":
         best_loss = ck['best_loss']
     else:
         start = 0
-    for epoch in range(start, 200):
+    for epoch in range(start, 50):
         train_loss, train_drr_win, train_xray_win = train(net, trainloader, optimizer, train_drr_win, train_xray_win,
                                                           env)
         test_loss, test_drr_win, test_xray_win = test(net, testloader, optimizer, test_drr_win, test_xray_win, env)
