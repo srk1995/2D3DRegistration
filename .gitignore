@@ -1,2 +1,10 @@
+
+# User-specific stuff
 *.txt
 *.mat
+*.csv
+*.m
+./unet
+./saved
+./registration
+./images
