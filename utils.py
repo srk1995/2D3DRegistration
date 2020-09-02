@@ -198,23 +198,24 @@ def DRR_generation(CT, R_pred, num):
     max_v = torch.tensor(np.array([(ct_pix[0]-1)/2, (ct_pix[1]-1)/2, (CT.size(1)-1)/2]), dtype=torch.float32).cuda(1)
 
     # Camera matrix
-    # R_pred = R_pred.cpu().detach().numpy()
-    R_pred = np.array([[0, 0, 0, 0, 0, 300]], dtype=np.float32)
+    R_pred = R_pred.cpu().detach().numpy()
+    # R_pred = np.array([[0, 0, 0, 0, 0, 300]], dtype=np.float32)
     # R_pred = R_.cpu().numpy()
     Rx = R.from_euler('x', -R_pred[:, 0], degrees=True)
     Ry = R.from_euler('y', -R_pred[:, 1], degrees=True)
-    Rz = R.from_euler('z', -R_pred[:, 2], degrees=True)
+    Rz = R.from_euler('z', R_pred[:, 2], degrees=True)
     r = Rx * Ry * Rz
 
-    t = torch.tensor(-np.array([[R_pred[:, 3]], [R_pred[:, 4]], [R_pred[:, 5]]])).cuda(1)
+    O = torch.tensor([0, 0, -200], dtype=torch.float32).view(3, 1, 1).cuda(1)
+    t = O - torch.tensor(np.array([[R_pred[:, 3]], [R_pred[:, 4]], [R_pred[:, 5]]])).cuda(1)
     # t = (t - (min_v.reshape(3, 1, 1) + max_v.reshape(3, 1, 1))/2) / ((max_v.reshape(3, 1, 1) - min_v.reshape(3, 1, 1))/2)
-    f = 1
+    f = 5
     K = torch.tensor([[f, 0, proj_pix[0]/2], [0, f, proj_pix[1]/2], [0, 0, 1]], dtype=torch.float32).cuda(1)
     rot = torch.tensor(r.as_dcm(), dtype=torch.float32).cuda(1)
 
     # Assign image coordinate
-    s_min, s_max = 0, 10
-    ss = 1/20
+    s_min, s_max = -100, 100
+    ss = 1/2
     img_pts = np.array([np.mgrid[1:proj_pix[1]+1, 1:proj_pix[0]+1].T.reshape(-1, 2)] * int(((s_max-s_min)/ss)))
 
     # img_pts = img_pts.reshape(-1, 2)
@@ -238,17 +239,17 @@ def DRR_generation(CT, R_pred, num):
     #
     # tt = cartesian_product(x, y, z)
 
-    # n_backp = (backp - (min_v + max_v)/2) / ((max_v - min_v)/2)
-    n_backp = backp
-    sio.savemat('CT_ray.mat', {'CT': CT.numpy(), 'ray':backp.cpu().numpy()})
-    # tt = n_backp.cpu().numpy()
+    n_backp = (backp - (min_v + max_v)/2) / ((max_v - min_v)/2)
+    # n_backp = backp
+    # sio.savemat('CT_ray.mat', {'CT': CT.numpy(), 'ray': n_backp.cpu().numpy()})
+    tt = n_backp.cpu().numpy()
 
     # Set the distance between camera center and object
 
     # Backproject to the world coordinate
     V = CT.cuda(1)
     V = V.view((num, V.size(0), V.size(1), V.size(2), V.size(3)))
-    n_backp = n_backp.view((1, proj_pix[0], proj_pix[1], (s_max - s_min) // ss, 3)).permute(0, 3, 1, 2, 4)
+    n_backp = n_backp.view((1, proj_pix[0], proj_pix[1], int((s_max - s_min) / ss) , 3)).permute(0, 3, 1, 2, 4)
     # n_backp = torch.tensor(n_backp, dtype=torch.float32).view((1, proj_pix[0], proj_pix[1], (s_max-s_min)//ss, 3)).permute(0, 3, 1, 2, 4)
     g = torch.nn.functional.grid_sample(V, n_backp, mode='bilinear', padding_mode='border')
 
