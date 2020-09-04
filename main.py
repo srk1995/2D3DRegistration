@@ -2,7 +2,6 @@ from utils import CE, crop_image, dice_loss
 from sklearn.metrics import confusion_matrix
 import os
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "9,8"
 import ConvNet
 import dataloader
 import torch.optim as optim
@@ -15,6 +14,7 @@ from dataloader import SegData_csv
 from torchvision import transforms
 from torch.utils.data import DataLoader
 import cv2
+import argparse
 
 
 def transform(img):
@@ -22,47 +22,6 @@ def transform(img):
     img_tensor = torch.from_numpy(img.astype(np.int32))
     img_tensor = img_tensor.float() / max_value
     return img_tensor
-
-
-train_file = './train_256.csv'
-test_file = './test_256.csv'
-PATH = './saved/'
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-vis = visdom.Visdom()
-
-train_batch_num = 1
-alpha = 1e-3
-
-proj_pix = [256, 256]
-
-mse = torch.nn.MSELoss()
-
-# train_win = vis.line(Y=torch.randn(1), X=np.array([5]), opts=dict(title="Train"))
-# test_win = vis.line(Y=torch.randn(1), X=np.array([5]), opts=dict(title="Test"))
-loss_win = None
-train_drr_win = None
-test_drr_win = None
-train_xray_win = None
-test_xray_win = None
-
-transfroms_ = transforms.Compose([
-    transforms.ToTensor(),
-    # transforms.Resize((64, 64))
-])
-train_dataset = SegData_csv(train_file, transform=transfroms_)
-test_dataset = SegData_csv(test_file, transform=transfroms_)
-trainloader = DataLoader(train_dataset, batch_size=train_batch_num, shuffle=True, num_workers=0)
-testloader = DataLoader(test_dataset, batch_size=train_batch_num, shuffle=False, num_workers=0)
-
-net = ConvNet.layer6Net(1, 20, 6)
-net = net.cuda()
-net = nn.DataParallel(net)
-
-criterion = torch.nn.MSELoss()
-optimizer = optim.Adam(net.parameters(), lr=1e-3, weight_decay=1e-4)
-# train_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=300)
-
-best_loss = np.inf
 
 
 def train(net, loader, optimizer, drr_win, xray_win, env):
@@ -87,10 +46,10 @@ def train(net, loader, optimizer, drr_win, xray_win, env):
         loss.backward()
         optimizer.step()
         #
-        tt = drr[0].cpu().numpy().squeeze()
-        tt = (tt - tt.min()) / (tt.max() - tt.min())
-        cv2.imshow('img', tt)
-        cv2.waitKey(10)
+        # tt = drr[0].cpu().numpy().squeeze()
+        # tt = (tt - tt.min()) / (tt.max() - tt.min())
+        # cv2.imshow('img', tt)
+        # cv2.waitKey(10)
 
 
         xray_win = utils.PlotImage(vis=vis, img=data[1][0].cpu().numpy().squeeze(), win=xray_win, env=env,
@@ -134,7 +93,65 @@ def test(net, loader, optimizer, drr_win, xray_win, env):
 
 
 if __name__ == "__main__":
-    env = "seg_6layer_alpha_1e-4_lr_1e-3"
+    parser = argparse.ArgumentParser(description="Preocess some numbers.")
+    parser.add_argument('--net', type=str, help='Network architecture, 6layer, 8layer, unet', default='6layer')
+    parser.add_argument('--alpha', type=float, help='alpha', default=1e-4)
+    parser.add_argument('--lr', type=float, help='Learning rate', default=1e-3)
+    parser.add_argument('--gpu', type=str, help='gpu number', default='9,8')
+
+    args = parser.parse_args()
+
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+
+    env = "seg" + args.net + "alpha" + str(args.alpha) + "lr" + str(args.lr)
+
+    train_file = './train_256.csv'
+    test_file = './test_256.csv'
+    PATH = './saved/'
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    vis = visdom.Visdom()
+
+    train_batch_num = 1
+    alpha = args.alpha
+
+    proj_pix = [256, 256]
+
+    mse = torch.nn.MSELoss()
+
+    # train_win = vis.line(Y=torch.randn(1), X=np.array([5]), opts=dict(title="Train"))
+    # test_win = vis.line(Y=torch.randn(1), X=np.array([5]), opts=dict(title="Test"))
+    loss_win = None
+    train_drr_win = None
+    test_drr_win = None
+    train_xray_win = None
+    test_xray_win = None
+
+    transfroms_ = transforms.Compose([
+        transforms.ToTensor(),
+        # transforms.Resize((64, 64))
+    ])
+    train_dataset = SegData_csv(train_file, transform=transfroms_)
+    test_dataset = SegData_csv(test_file, transform=transfroms_)
+    trainloader = DataLoader(train_dataset, batch_size=train_batch_num, shuffle=True, num_workers=0)
+    testloader = DataLoader(test_dataset, batch_size=train_batch_num, shuffle=False, num_workers=0)
+
+    if args.net == '6layer':
+        net = ConvNet.layer6Net(1, 20, 6)
+    elif args.net == '8layer':
+        net = ConvNet.layer8Net(1, 20, 6)
+    else:
+        net = ConvNet.UNet(1, 20, 6)
+
+    net = net.cuda()
+    net = nn.DataParallel(net)
+
+    criterion = torch.nn.MSELoss()
+    optimizer = optim.Adam(net.parameters(), lr=args.lr, weight_decay=1e-4)
+    # train_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=300)
+
+    best_loss = np.inf
+
+
     # vis.close(env="seg_6layer")
     if os.path.isfile("./saved/BEST" + env[3:] + ".pth"):
         ck = torch.load("./saved/BEST" + env[3:] + ".pth")

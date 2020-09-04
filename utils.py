@@ -198,8 +198,8 @@ def DRR_generation(CT, R_pred, num):
     max_v = torch.tensor(np.array([(ct_pix[0]-1)/2, (ct_pix[1]-1)/2, (CT.size(1)-1)/2]), dtype=torch.float32).cuda(1)
 
     # Camera matrix
-    # R_pred = R_pred.cpu().detach().numpy()
-    R_pred = np.array([[0, 0, 0, 0, 0, 0]], dtype=np.float32)
+    R_pred = R_pred.cpu().detach().numpy()
+    # R_pred = np.array([[0, 0, 0, 0, 0, 0]], dtype=np.float32)
     # R_pred = R_.cpu().numpy()
     Rx = R.from_euler('x', -R_pred[:, 0], degrees=True)
     Ry = R.from_euler('y', -R_pred[:, 1], degrees=True)
