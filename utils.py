@@ -325,9 +325,10 @@ def DRR_generation(CT, R_pred, num):
     normals = torch.tensor([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]], dtype=torch.float32).cuda(1)
     pts = normals
 
-    n_backp = (backp - (min_v + max_v)/2) / ((max_v - min_v)/2)
-    p0 = t.view((3, 1)).repeat(1, proj_pix[0] * proj_pix[1])
-    p1 = p0 + n_backp.squeeze().transpose(1, 0)
+    n_backp = (backp - (min_v + max_v) / 2) / ((max_v - min_v) / 2)
+    O = (O.view((3)) - (min_v + max_v) / 2) / ((max_v - min_v) / 2)
+    p0 = O.view((3, 1)).repeat(1, proj_pix[0] * proj_pix[1])
+    p1 = n_backp.squeeze().transpose(1, 0)
     itsc_list = []
     for i in range(6):
         itsc_list.append(isect_line_plane_v3(p0, p1, pts[i, :].view(3, 1), normals[i, :].view(3, 1), epsilon=1e-6))
@@ -343,7 +344,7 @@ def DRR_generation(CT, R_pred, num):
 
 
     # n_backp = backp
-    sio.savemat('CT_ray.mat', {'CT': CT.numpy(), 'ray': n_backp.cpu().numpy()})
+    # sio.savemat('CT_ray.mat', {'CT': CT.numpy(), 'ray': n_backp.cpu().numpy()})
     # tt = n_backp.cpu().numpy().squeeze()
 
     # Set the distance between camera center and object
