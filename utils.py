@@ -105,6 +105,79 @@ def cartesian_product(*arrays):
         arr[..., i] = a
     return arr.reshape(-1, la)
 
+# intersection function
+def isect_line_plane_v3(p0, p1, p_co, p_no, epsilon=1e-6):
+    """
+    p0, p1: Define the line.
+    p_co, p_no: define the plane:
+        p_co Is a point on the plane (plane coordinate).
+        p_no Is a normal vector defining the plane direction;
+             (does not need to be normalized).
+
+    Return a Vector or None (when the intersection can't be found).
+    """
+
+    # # Test
+    # p0 = torch.tensor([[0, 0, 0], [0, 0, 0]], dtype=torch.float32).view(2, 3).T
+    # p1 = torch.tensor([[0, 0, 1], [1, 2, 3]], dtype=torch.float32).view(2, 3).T
+    #
+    # p_co = torch.tensor([20, 10, 30], dtype=torch.float32).view(3, 1)
+    # p_no = torch.tensor([0, 0, 10], dtype=torch.float32).view(3, 1)
+
+    # Normalize the normal vector of the plane
+    n = torch.norm(p_no, dim=0)
+    p_no = p_no / n
+
+
+    # Normalize the direction vector of the line and calculate degree between the normal vector and the direction vector
+    u = p1 - p0
+    n = torch.norm(u, dim=0)
+    u = u / n
+    dot = torch.mm(u.T, p_no)
+
+    # idx = np.where(abs(dot.cpu()) > torch.tensor(epsilon))[0]
+    # p0 = p0[:, idx]
+    # p1 = p1[:, idx]
+    # u = p1 - p0
+    # n = torch.norm(u, dim=0)
+    # u = u / n
+    # dot = torch.mm(u.T, p_no)
+
+    # The factor of the point between p0 -> p1 (0 - 1)
+    # if 'fac' is between (0 - 1) the point intersects with the segment.
+    # Otherwise:
+    #  < 0.0: behind p0.
+    #  > 1.0: infront of p1.
+    w = p0 - p_co
+    fac = -torch.mm(w.T, p_no) / dot
+    u = u * fac.T
+    vec = p0 + u
+    # tt = vec.cpu().numpy()
+    return vec
+
+# ----------------------
+# generic math functions
+
+
+def dot_v3v3(v0, v1):
+    return (
+        (v0[:, 0] * v1[:, 0]) +
+        (v0[:, 1] * v1[:, 1]) +
+        (v0[:, 2] * v1[:, 2])
+        )
+
+
+def len_squared_v3(v0):
+    return dot_v3v3(v0, v0)
+
+
+def mul_v3_fl(v0, f):
+    return (
+        v0[0] * f,
+        v0[1] * f,
+        v0[2] * f,
+        )
+
 
 def raycasting(CT, R_pred, num, R_):
     """
@@ -182,6 +255,14 @@ def raycasting(CT, R_pred, num, R_):
     # print(proj_im.max())
     return proj_im
 
+def create_ranges_nd(start, stop, N, endpoint=True):
+    if endpoint==1:
+        divisor = N-1
+    else:
+        divisor = N
+    steps = (1.0/divisor) * (stop - start)
+    return start[...,None] + steps[...,None]*np.arange(N)
+
 def DRR_generation(CT, R_pred, num):
     """
     :param CT:
@@ -199,7 +280,7 @@ def DRR_generation(CT, R_pred, num):
 
     # Camera matrix
     R_pred = R_pred.cpu().detach().numpy()
-    # R_pred = np.array([[0, 0, 0, 0, 0, 0]], dtype=np.float32)
+    R_pred = np.array([[0, 0, 0, 0, 0, 0]], dtype=np.float32)
     # R_pred = R_.cpu().numpy()
     Rx = R.from_euler('x', -R_pred[:, 0], degrees=True)
     Ry = R.from_euler('y', -R_pred[:, 1], degrees=True)
@@ -210,28 +291,30 @@ def DRR_generation(CT, R_pred, num):
     t = -O - torch.tensor(np.array([[R_pred[:, 3]], [R_pred[:, 4]], [R_pred[:, 5]]])).cuda(1)
     # t = (t - (min_v.reshape(3, 1, 1) + max_v.reshape(3, 1, 1))/2) / ((max_v.reshape(3, 1, 1) - min_v.reshape(3, 1, 1))/2)
     f = 256
+    n = 200
     K = torch.tensor([[f, 0, proj_pix[0]/2], [0, f, proj_pix[1]/2], [0, 0, 1]], dtype=torch.float32).cuda(1)
     rot = torch.tensor(r.as_dcm(), dtype=torch.float32).cuda(1)
 
     # Assign image coordinate
-    s_min, s_max = 0, 1000
-    ss = 1
-    img_pts = np.array([np.mgrid[1:proj_pix[1]+1, 1:proj_pix[0]+1].T.reshape(-1, 2)] * int(((s_max-s_min)/ss)))
+    # s_min, s_max = 0, 1000
+    # ss = 1
+    # img_pts = np.array([np.mgrid[1:proj_pix[1]+1, 1:proj_pix[0]+1].T.reshape(-1, 2)] * int(((s_max-s_min)/ss)))
+    img_pts = np.array([np.mgrid[1:proj_pix[1] + 1, 1:proj_pix[0] + 1].T.reshape(-1, 2)])
 
     # img_pts = img_pts.reshape(-1, 2)
     img_pts = torch.tensor(img_pts, dtype=torch.float32).view((-1, 2))
 
-    s = torch.tensor(np.mgrid[s_min:s_max:ss].repeat(proj_pix[0] * proj_pix[1]), dtype=torch.float32)
+    s = torch.tensor(np.mgrid[1:2:1].repeat(proj_pix[0] * proj_pix[1]), dtype=torch.float32)
     s = s.view((-1, 1))
 
     img_pts = torch.cat([img_pts*s, s], dim=-1).numpy()
 
-    img_pts = img_pts.reshape((int((s_max-s_min)/ss), proj_pix[0], proj_pix[1], 3)).transpose((3, 0, 1, 2)).reshape(3, -1, 1)
+    img_pts = img_pts.reshape((1, proj_pix[0], proj_pix[1], 3)).transpose((3, 0, 1, 2)).reshape(3, -1, 1)
 
     img_pts = torch.tensor(np.tile(img_pts, (1, 1, num)).transpose((2, 0, 1))).cuda(1)
     backp = torch.matmul(torch.matmul(torch.inverse(rot), torch.inverse(K)),
                       img_pts - torch.matmul(K, t.view((3, num))).T.reshape((num, 3, 1)))
-    backp = backp.view((num, 3, int((s_max-s_min)/ss), -1)).permute((0, 3, 2, 1))  # num, -1, 200, 3
+    backp = backp.view((num, 3, 1, -1)).permute((0, 3, 2, 1))  # num, -1, 200, 3
 
     # x = np.linspace(-ct_pix[0]/2, ct_pix[0]/2 -1, 512)
     # y = np.linspace(-ct_pix[1] / 2, ct_.cuda()pix[1] / 2 -1, 512)
@@ -239,17 +322,36 @@ def DRR_generation(CT, R_pred, num):
     #
     # tt = cartesian_product(x, y, z)
 
+    normals = torch.tensor([[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]], dtype=torch.float32).cuda(1)
+    pts = normals
+
     n_backp = (backp - (min_v + max_v)/2) / ((max_v - min_v)/2)
+    p0 = t.view((3, 1)).repeat(1, proj_pix[0] * proj_pix[1])
+    p1 = p0 + n_backp.squeeze().transpose(1, 0)
+    itsc_list = []
+    for i in range(6):
+        itsc_list.append(isect_line_plane_v3(p0, p1, pts[i, :].view(3, 1), normals[i, :].view(3, 1), epsilon=1e-6))
+
+    itsc = torch.stack([itsc_list[0], itsc_list[1], itsc_list[2], itsc_list[3], itsc_list[4], itsc_list[5]])
+    itsc = itsc.permute(0, 2, 1)
+    idx = ((itsc[:, :, 0] <= 1) & (itsc[:, :, 0] >= -1) & (itsc[:, :, 1] <= 1) & (itsc[:, :, 1] >= -1) & (itsc[:, :, 2] <= 1) & (
+                itsc[:, :, 2] >= -1))
+    vec = itsc[idx, :].reshape((2, -1, 3)).cpu().numpy()
+
+
+    n_backp = torch.tensor(create_ranges_nd(vec[1], vec[0], n), dtype=torch.float32)
+
+
     # n_backp = backp
-    # sio.savemat('CT_ray.mat', {'CT': CT.numpy(), 'ray': n_backp.cpu().numpy()})
-    # tt = n_backp.cpu().numpy()
+    sio.savemat('CT_ray.mat', {'CT': CT.numpy(), 'ray': n_backp.cpu().numpy()})
+    # tt = n_backp.cpu().numpy().squeeze()
 
     # Set the distance between camera center and object
 
     # Backproject to the world coordinate
     V = CT.cuda(1)
     V = V.view((num, V.size(0), V.size(1), V.size(2), V.size(3)))
-    n_backp = n_backp.view((1, proj_pix[0], proj_pix[1], int((s_max - s_min) / ss) , 3)).permute(0, 3, 1, 2, 4)
+    n_backp = n_backp.view((1, proj_pix[0], proj_pix[1], 3, n)).permute(0, 4, 1, 2, 3)  # B x num x 256 x 256 x 3
     # n_backp = torch.tensor(n_backp, dtype=torch.float32).view((1, proj_pix[0], proj_pix[1], (s_max-s_min)//ss, 3)).permute(0, 3, 1, 2, 4)
     g = torch.nn.functional.grid_sample(V, n_backp, mode='bilinear', padding_mode='border')
 
