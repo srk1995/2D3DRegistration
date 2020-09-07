@@ -340,7 +340,7 @@ def DRR_generation(CT, R_pred, num):
     vec = itsc[idx, :].reshape((2, -1, 3)).cpu().numpy()
 
 
-    n_backp = torch.tensor(create_ranges_nd(vec[1], vec[0], n), dtype=torch.float32)
+    n_backp = torch.tensor(create_ranges_nd(vec[1], vec[0], n), dtype=torch.float32).cuda(1)
 
 
     # n_backp = backp
