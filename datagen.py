@@ -30,8 +30,8 @@ class SegData(Dataset):
         self.s = 1
         self.dlist = [os.path.join(self.root, x) for x in os.listdir(root)]
         self.transform = transform
-        self.rotation = np.array([np.linspace(-20, 20, 5)] * self.s).reshape(-1)
-        self.translation = np.array([np.linspace(-10, 10, 3)] * self.s).reshape(-1)
+        self.rotation = np.array([np.linspace(-3, 3, 3)] * self.s).reshape(-1)
+        self.translation = np.array([np.linspace(-5, 5, 5)] * self.s).reshape(-1)
         self.label = cartesian_product(self.rotation, self.rotation, self.rotation, self.translation, self.translation, self.translation)
         self.CT = []
 

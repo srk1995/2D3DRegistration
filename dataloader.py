@@ -7,6 +7,7 @@ from torchvision import transforms
 import pymesh
 import visdom
 import utils
+import time
 
 
 
@@ -193,9 +194,13 @@ class SegData_csv(Dataset):
 
         T = torch.tensor(np.array(tt[1:], dtype=np.float32), dtype=torch.float32)
 
+        # tic = time.clock()
         xray = utils.DRR_generation(torch.tensor(CT_out), T.view(1, 6), 1)
+        # toc = time.clock()
+        # print(toc - tic)
 
-
+        if (CT_out.min() != 0) or (CT_out.max() != 1):
+            print(CT)
         ct_mean = torch.mean(CT_out)
         ct_std = torch.std(CT_out)
         CT_out = (CT_out - ct_mean) / ct_std

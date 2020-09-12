@@ -47,9 +47,11 @@ def train(net, loader, optimizer, drr_win, xray_win, env):
         optimizer.step()
         #
         # tt = drr[0].cpu().numpy().squeeze()
-        # tt = (tt - tt.min()) / (tt.max() - tt.min())
-        # cv2.imshow('img', tt)
-        # cv2.waitKey(10)
+        tt = data[1][0].cpu().numpy().squeeze()
+        if (tt.max() != tt.min()):
+            tt = (tt - tt.min()) / (tt.max() - tt.min())
+        cv2.imshow('img', tt)
+        cv2.waitKey(10)
 
 
         xray_win = utils.PlotImage(vis=vis, img=data[1][0].cpu().numpy().squeeze(), win=xray_win, env=env,
@@ -103,7 +105,7 @@ if __name__ == "__main__":
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-    env = "seg" + args.net + "alpha" + str(args.alpha) + "lr" + str(args.lr)
+    env = "seg_" + args.net + "_alpha_" + str(args.alpha) + "lr_" + str(args.lr)
 
     train_file = './train_256.csv'
     test_file = './test_256.csv'
@@ -114,7 +116,7 @@ if __name__ == "__main__":
     train_batch_num = 1
     alpha = args.alpha
 
-    proj_pix = [256, 256]
+    proj_pix = [512, 512]
 
     mse = torch.nn.MSELoss()
 
