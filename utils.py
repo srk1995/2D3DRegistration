@@ -187,7 +187,7 @@ def create_ranges_nd(start, stop, N, endpoint=True):
     steps = (1.0/divisor) * (stop - start)
     return start[...,None] + steps[...,None]*np.arange(N)
 
-def DRR_generation(CT, R_pred, num):
+def DRR_generation(CT, R_pred, num, proj_pix):
     """
     :param CT:
     :param R_pred:
@@ -197,48 +197,56 @@ def DRR_generation(CT, R_pred, num):
     """
 
     ct_pix = [512, 512]
-    proj_pix = [512, 512]
 
     min_v = torch.tensor(np.array([-(ct_pix[0]-1)/2, -(ct_pix[1]-1)/2, -(CT.size(1)-1)/2]), dtype=torch.float32).cuda(1)
     max_v = torch.tensor(np.array([(ct_pix[0]-1)/2, (ct_pix[1]-1)/2, (CT.size(1)-1)/2]), dtype=torch.float32).cuda(1)
 
     # Camera matrix
     R_pred = R_pred.cpu().detach().numpy()
-    # R_pred = np.array([[0, 0, 5, 0, 0, 0]], dtype=np.float32)
+    # R_pred = np.array([[15, -15, 0, 0, 0, 0]], dtype=np.float32)
     # R_pred = R_.cpu().numpy()
     Rx = R.from_euler('x', -R_pred[:, 0], degrees=True)
     Ry = R.from_euler('y', -R_pred[:, 1], degrees=True)
     Rz = R.from_euler('z', -R_pred[:, 2], degrees=True)
     r = Rx * Ry * Rz
 
-    O = torch.tensor([0, 0, -200], dtype=torch.float32).view(3, 1, 1).cuda(1)
+    O = torch.tensor([0, 0, -160], dtype=torch.float32).view(3, 1, 1).cuda(1)
     t = -O - torch.tensor(np.array([[R_pred[:, 3]], [R_pred[:, 4]], [R_pred[:, 5]]])).cuda(1)
     # t = (t - (min_v.reshape(3, 1, 1) + max_v.reshape(3, 1, 1))/2) / ((max_v.reshape(3, 1, 1) - min_v.reshape(3, 1, 1))/2)
-    f = 128
+    f = 256
     n = 200
     K = torch.tensor([[f, 0, proj_pix[0]/2], [0, f, proj_pix[1]/2], [0, 0, 1]], dtype=torch.float32).cuda(1)
     rot = torch.tensor(r.as_dcm(), dtype=torch.float32).cuda(1)
 
-    # Assign image coordinate
-    # s_min, s_max = 0, 1000
+
+    ## For visualization (1)
+    # s_min, s_max = 0, 200
     # ss = 1
     # img_pts = np.array([np.mgrid[1:proj_pix[1]+1, 1:proj_pix[0]+1].T.reshape(-1, 2)] * int(((s_max-s_min)/ss)))
-    img_pts = np.array([np.mgrid[1:proj_pix[1] + 1, 1:proj_pix[0] + 1].T.reshape(-1, 2)])
+    # img_pts = torch.tensor(img_pts, dtype=torch.float32).view((-1, 2))
+    # s = torch.tensor(np.mgrid[s_min:s_max:ss].repeat(proj_pix[0] * proj_pix[1]), dtype=torch.float32)
+    # s = s.view((-1, 1))
+    # img_pts = torch.cat([img_pts*s, s], dim=-1).numpy()
+    # img_pts = img_pts.reshape((int((s_max - s_min) / ss), proj_pix[0], proj_pix[1], 3)).transpose((3, 0, 1, 2)).reshape(
+    #     3, -1, 1)
+    # img_pts = torch.tensor(np.tile(img_pts, (1, 1, num)).transpose((2, 0, 1))).cuda(1)
+    # backp = torch.matmul(torch.matmul(torch.inverse(rot), torch.inverse(K)),
+    #                      img_pts - torch.matmul(K, t.view((3, num))).T.reshape((num, 3, 1)))
+    # backp = backp.view((num, 3, int((s_max - s_min) / ss), -1)).permute((0, 3, 2, 1))  # num, -1, 200, 3
 
-    # img_pts = img_pts.reshape(-1, 2)
+
+    ## Original Code (2)
+    img_pts = np.array([np.mgrid[1:proj_pix[1] + 1, 1:proj_pix[0] + 1].T.reshape(-1, 2)] * 2)
     img_pts = torch.tensor(img_pts, dtype=torch.float32).view((-1, 2))
-
-    s = torch.tensor(np.mgrid[1:2:1].repeat(proj_pix[0] * proj_pix[1]), dtype=torch.float32)
+    s = torch.tensor(np.mgrid[0:2:1].repeat(proj_pix[0] * proj_pix[1]), dtype=torch.float32)
     s = s.view((-1, 1))
-
     img_pts = torch.cat([img_pts*s, s], dim=-1).numpy()
-
-    img_pts = img_pts.reshape((1, proj_pix[0], proj_pix[1], 3)).transpose((3, 0, 1, 2)).reshape(3, -1, 1)
-
+    img_pts = img_pts.reshape((2, proj_pix[0], proj_pix[1], 3)).transpose((3, 0, 1, 2)).reshape(3, -1, 1)
     img_pts = torch.tensor(np.tile(img_pts, (1, 1, num)).transpose((2, 0, 1))).cuda(1)
     backp = torch.matmul(torch.matmul(torch.inverse(rot), torch.inverse(K)),
                       img_pts - torch.matmul(K, t.view((3, num))).T.reshape((num, 3, 1)))
-    backp = backp.view((num, 3, 1, -1)).permute((0, 3, 2, 1))  # num, -1, 200, 3
+    backp = backp.view((num, 3, 2, -1)).permute((0, 3, 2, 1))  # num, -1, 200, 3
+
 
     # x = np.linspace(-ct_pix[0]/2, ct_pix[0]/2 -1, 512)
     # y = np.linspace(-ct_pix[1] / 2, ct_.cuda()pix[1] / 2 -1, 512)
@@ -250,17 +258,23 @@ def DRR_generation(CT, R_pred, num):
     pts = normals
 
     n_backp = (backp - (min_v + max_v) / 2) / ((max_v - min_v) / 2)
-    O = (O.view((3)) - (min_v + max_v) / 2) / ((max_v - min_v) / 2)
-    p0 = O.view((3, 1)).repeat(1, proj_pix[0] * proj_pix[1])
-    p1 = n_backp.squeeze().transpose(1, 0)
+    t = -(t.view((3)) - (min_v + max_v) / 2) / ((max_v - min_v) / 2)
+
+    sio.savemat('CT_ray.mat', {'CT': CT.numpy(), 'ray': backp.cpu().numpy()})
+
+    zz = torch.tensor([-(CT.size(1)-1)/2, (CT.size(1)-1)/2], dtype=torch.float32)
+    zz = (zz - (min_v[2] + max_v[2]) / 2) / ((max_v[2] - min_v[2]) / 2)
+    # p0 = t.view((3, 1)).repeat(1, proj_pix[0] * proj_pix[1])
+    p0 = n_backp[:, :, 0, :].squeeze().transpose(1, 0)
+    p1 = n_backp[:, :, 1, :].squeeze().transpose(1, 0)
     itsc_list = []
     for i in range(6):
         itsc_list.append(isect_line_plane_v3(p0, p1, pts[i, :].view(3, 1), normals[i, :].view(3, 1), epsilon=1e-6))
 
     itsc = torch.stack([itsc_list[0], itsc_list[1], itsc_list[2], itsc_list[3], itsc_list[4], itsc_list[5]])
     itsc = itsc.permute(0, 2, 1)
-    idx = ((itsc[:, :, 0] <= 1) & (itsc[:, :, 0] >= -1) & (itsc[:, :, 1] <= 1) & (itsc[:, :, 1] >= -1) & (itsc[:, :, 2] <= 1) & (
-                itsc[:, :, 2] >= -1))
+    idx = ((itsc[:, :, 0] <= 1) & (itsc[:, :, 0] >= -1) & (itsc[:, :, 1] <= 1) & (itsc[:, :, 1] >= -1) & (itsc[:, :, 2] <= zz[1]) & (
+                itsc[:, :, 2] >= zz[0]))
     # vec = itsc[idx, :].reshape((2, -1, 3)).cpu().numpy()
     z = torch.tensor([[False, False, False, False, True, True]]).reshape(6, 1).repeat(1, idx.size(1)).cuda(1)
     idx = torch.where((torch.sum(idx, dim=0) == 2), idx, z).permute(1, 0)

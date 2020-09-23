@@ -40,18 +40,18 @@ def train(net, loader, optimizer, drr_win, xray_win, env):
         # Train -> Back propagation -> Optimization.
         outputs = net(inputs, inputs_X)
 
-        drr = utils.DRR_generation(data[0].view(1, inputs.shape[2], inputs.shape[3], inputs.shape[4]), outputs, train_batch_num).view((1, proj_pix[0], proj_pix[1]))
+        drr = utils.DRR_generation(data[0].view(1, inputs.shape[2], inputs.shape[3], inputs.shape[4]), outputs, train_batch_num, proj_pix).view((1, proj_pix[0], proj_pix[1]))
         loss = mse(outputs, labels) + alpha * mse(drr, data[1].cuda(1))
 
         loss.backward()
         optimizer.step()
         #
-        # tt = drr[0].cpu().numpy().squeeze()
-        tt = data[1][0].cpu().numpy().squeeze()
-        if (tt.max() != tt.min()):
-            tt = (tt - tt.min()) / (tt.max() - tt.min())
-        cv2.imshow('img', tt)
-        cv2.waitKey(10)
+        # # tt = drr[0].cpu().numpy().squeeze()
+        # tt = data[1][0].cpu().numpy().squeeze()
+        # if (tt.max() != tt.min()):
+        #     tt = (tt - tt.min()) / (tt.max() - tt.min())
+        # cv2.imshow('img', tt)
+        # cv2.waitKey(10)
 
 
         xray_win = utils.PlotImage(vis=vis, img=data[1][0].cpu().numpy().squeeze(), win=xray_win, env=env,
@@ -81,7 +81,7 @@ def test(net, loader, optimizer, drr_win, xray_win, env):
         # Feed forward
         outputs = net(inputs, inputs_X)
 
-        drr = utils.DRR_generation(data[0].view(1, inputs.shape[2], inputs.shape[3], inputs.shape[4]), outputs, train_batch_num).view((1, proj_pix[0], proj_pix[1]))
+        drr = utils.DRR_generation(data[0].view(1, inputs.shape[2], inputs.shape[3], inputs.shape[4]), outputs, train_batch_num, proj_pix).view((1, proj_pix[0], proj_pix[1]))
         loss = mse(outputs, labels) + mse(drr, data[1].cuda(1))
 
         xray_win = utils.PlotImage(vis=vis, img=data[1][0].cpu().numpy().squeeze(), win=xray_win, env=env,
@@ -99,7 +99,7 @@ if __name__ == "__main__":
     parser.add_argument('--net', type=str, help='Network architecture, 6layer, 8layer, unet', default='6layer')
     parser.add_argument('--alpha', type=float, help='alpha', default=1e-4)
     parser.add_argument('--lr', type=float, help='Learning rate', default=1e-3)
-    parser.add_argument('--gpu', type=str, help='gpu number', default='9,8')
+    parser.add_argument('--gpu', type=str, help='gpu number', default='2, 3')
 
     args = parser.parse_args()
 
@@ -116,7 +116,7 @@ if __name__ == "__main__":
     train_batch_num = 1
     alpha = args.alpha
 
-    proj_pix = [512, 512]
+    proj_pix = [256, 256]
 
     mse = torch.nn.MSELoss()
 
@@ -132,11 +132,10 @@ if __name__ == "__main__":
         transforms.ToTensor(),
         # transforms.Resize((64, 64))
     ])
-    train_dataset = SegData_csv(train_file, transform=transfroms_)
-    test_dataset = SegData_csv(test_file, transform=transfroms_)
+    train_dataset = SegData_csv(train_file, proj_pix, transform=transfroms_)
+    test_dataset = SegData_csv(test_file, proj_pix, transform=transfroms_)
     trainloader = DataLoader(train_dataset, batch_size=train_batch_num, shuffle=True, num_workers=0)
     testloader = DataLoader(test_dataset, batch_size=train_batch_num, shuffle=False, num_workers=0)
-
     if args.net == '6layer':
         net = ConvNet.layer6Net(1, 20, 6)
     elif args.net == '8layer':

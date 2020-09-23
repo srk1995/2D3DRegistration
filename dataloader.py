@@ -161,7 +161,7 @@ class SegData(Dataset):
         return len(self.xray_list)
 
 class SegData_csv(Dataset):
-    def __init__(self, file, transform):
+    def __init__(self, file, proj_pix, transform):
         """
         :param root: the path of data
         :param transform: transforms to make the output tensor
@@ -169,6 +169,7 @@ class SegData_csv(Dataset):
         """
         self.dlist = np.loadtxt(file, delimiter=",", dtype=str)
         self.transform = transform
+        self.proj_pix = proj_pix
 
         self.drr_win = None
         self.vis = visdom.Visdom()
@@ -195,7 +196,7 @@ class SegData_csv(Dataset):
         T = torch.tensor(np.array(tt[1:], dtype=np.float32), dtype=torch.float32)
 
         # tic = time.clock()
-        xray = utils.DRR_generation(torch.tensor(CT_out), T.view(1, 6), 1)
+        xray = utils.DRR_generation(torch.tensor(CT_out), T.view(1, 6), 1, self.proj_pix)
         # toc = time.clock()
         # print(toc - tic)
 
