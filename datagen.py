@@ -47,7 +47,7 @@ class SegData(Dataset):
             # path = os.path.join(f, 'xray_256_complex')
             # if not os.path.isdir(path):
             #     os.mkdir(path)
-            CT = os.path.join(f, '3d_numpy.npy')
+            CT = os.path.join(f, 'numpy_RG_npy.npy')
 
             CT_out = np.load(CT)
             CT_out = np.expand_dims(np.array(CT_out, dtype=np.float32), axis=-1).transpose((3, 2, 1, 0))
@@ -85,8 +85,8 @@ class SegData(Dataset):
 if __name__ == "__main__":
     # train_path = './registration/2D3D_Data/train'
     # test_path = './registration/2D3D_Data/test'
-    train_path = '/home/srk1995/pub/db/Dicom_Image_Unet_pseudo/Train/'
-    test_path = '/home/srk1995/pub/db/Dicom_Image_Unet_pseudo/Test/'
+    train_path = '/home/srk1995/pub/db/Unet_1024/Train/'
+    test_path = '/home/srk1995/pub/db/Unet_1024/Test/'
 
     # cTdataloader = Data(root, transform=transforms.ToTensor())
     kdata_train = SegData(train_path, train=True, transform=transforms.ToTensor())

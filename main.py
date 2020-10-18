@@ -99,7 +99,7 @@ if __name__ == "__main__":
     parser.add_argument('--net', type=str, help='Network architecture, 6layer, 8layer, unet', default='6layer')
     parser.add_argument('--alpha', type=float, help='alpha', default=1e-4)
     parser.add_argument('--lr', type=float, help='Learning rate', default=1e-3)
-    parser.add_argument('--gpu', type=str, help='gpu number', default='2, 3')
+    parser.add_argument('--gpu', type=str, help='gpu number', default='0, 1')
 
     args = parser.parse_args()
 

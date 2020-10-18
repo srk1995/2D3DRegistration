@@ -7,6 +7,7 @@ from torchvision import transforms
 import pymesh
 import visdom
 import utils
+import skeleton3
 import time
 
 
@@ -189,14 +190,31 @@ class SegData_csv(Dataset):
 
         CT = os.path.join(tt[0])
 
-        CT_out = np.load(CT)
-        CT_out = np.expand_dims(np.array(CT_out, dtype=np.float32), axis=-1).transpose((3, 2, 1, 0))
+        CT= np.load(CT)
+        CT_out = np.expand_dims(np.array(CT, dtype=np.float32), axis=-1).transpose((3, 2, 1, 0))
         CT_out = torch.tensor(CT_out)
 
         T = torch.tensor(np.array(tt[1:], dtype=np.float32), dtype=torch.float32)
 
         # tic = time.clock()
-        xray = utils.DRR_generation(torch.tensor(CT_out), T.view(1, 6), 1, self.proj_pix)
+        catheter = []
+        while len(catheter) == 0:
+            a = skeleton3.mapping(CT)
+            skel = a.skel
+
+            xyz = np.where(skel == 1)
+            idx = np.random.randint(len(xyz[0]), size=2)
+            sp = np.array([xyz[0][idx[0]], xyz[1][idx[0]], xyz[2][idx[0]]])
+            fp = np.array([xyz[0][idx[1]], xyz[1][idx[1]], xyz[2][idx[1]]])
+            catheter = a.get_road(sp, fp)
+
+        catheter = np.array(catheter)
+        C = np.zeros_like(CT)
+        C[catheter[:, 0], catheter[:, 1], catheter[:, 2]] = 1
+        C = np.expand_dims(np.array(C, dtype=np.float32), axis=-1).transpose((3, 2, 1, 0))
+        C = torch.tensor(C)
+
+        xray = utils.DRR_generation(torch.tensor(C), T.view(1, 6), 1, self.proj_pix)
         # toc = time.clock()
         # print(toc - tic)
 
