@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from pointnet_util import PointNetSetAbstractionMsg, PointNetSetAbstraction
 
 from unet.unet_parts import *
 
@@ -39,7 +40,7 @@ class UNet(nn.Module):
         self.dconv_up1 = double_conv3(hidden*2 + hidden, hidden)
 
         self.conv_last = nn.Conv3d(hidden, 1, 1)
-        self.fc_ct = nn.Linear(64*64*64, 128)
+        self.fc_ct = nn.Linear(32*32*32, 128)
 
         self.dconv_down1_x = double_conv(input, hidden)
         self.dconv_down2_x = double_conv(hidden, hidden*2)
@@ -54,13 +55,13 @@ class UNet(nn.Module):
         self.dconv_up1_x = double_conv(hidden*2 + hidden, hidden)
 
         self.conv_last_x = nn.Conv2d(hidden, 1, 1)
-        self.fc_x = nn.Linear(64 * 64, 128)
+        self.fc_x = nn.Linear(32 * 32, 128)
 
 
         self.fc = nn.Linear(256, 6)
 
     def forward(self, x, xray):
-        x = F.interpolate(x, (128, 128, 128))
+        x = F.interpolate(x, (64, 64, 64))
         conv1 = self.dconv_down1(x)
         x = self.maxpool(conv1)
 
@@ -92,7 +93,7 @@ class UNet(nn.Module):
 
 
         # X-ray
-        xray = F.interpolate(xray, (128, 128))
+        xray = F.interpolate(xray, (64, 64))
         conv1 = self.dconv_down1_x(xray)
         x = self.maxpool_x(conv1)
 
@@ -273,7 +274,7 @@ class layer6Net(nn.Module):
         self.bn2 = nn.BatchNorm3d(hidden_size)
         self.map3 = nn.Conv3d(hidden_size, hidden_size, 5, padding=0, bias=False)
         self.bn3 = nn.BatchNorm3d(hidden_size)
-        self.fc_ct = nn.Linear(hidden_size*32*32*32, output_size*2)
+        self.fc_ct = nn.Linear(hidden_size*16*16*16, output_size*2)
 
         # layers for X-ray
         self.conv1 = nn.Conv2d(input_size, hidden_size, 3, padding=1)
@@ -284,7 +285,7 @@ class layer6Net(nn.Module):
         self.bn3_x = nn.BatchNorm2d(hidden_size*2)
 
 
-        self.fc_x = nn.Linear(hidden_size * 32 * 32, output_size * 2)
+        self.fc_x = nn.Linear(hidden_size * 16 * 16, output_size * 2)
         self.fc1 = nn.Linear(output_size * 4, output_size * 3)
         self.fc2 = nn.Linear(output_size * 3, output_size * 2)
         self.fc3 = nn.Linear(output_size * 2, output_size)
@@ -293,21 +294,21 @@ class layer6Net(nn.Module):
 
     def forward(self, x, xray):
         # CT
-        x = F.interpolate(x, (128, 128, 128))
+        x = F.interpolate(x, (64, 64, 64))
         out = self.map1(x)
         # out = F.relu(self.bn1(out))
         out = F.relu(out)
-        out = nn.AdaptiveMaxPool3d((128, 128, 128))(out)
+        out = nn.AdaptiveMaxPool3d((64, 64, 64))(out)
 
         out = self.map2(out)
         # out = F.relu(self.bn2(out))
         out = F.relu(out)
-        out = nn.AdaptiveMaxPool3d((64, 64, 64))(out)
+        out = nn.AdaptiveMaxPool3d((32, 32, 32))(out)
 
         out = self.map3(out)
         # out = F.relu(self.bn3(out))
         out = F.relu(out)
-        out = nn.AdaptiveMaxPool3d((32, 32, 32))(out)
+        out = nn.AdaptiveMaxPool3d((16, 16, 16))(out)
 
         out = out.view((1, -1))
         out_ct = F.relu(self.fc_ct(out))
@@ -317,17 +318,17 @@ class layer6Net(nn.Module):
         out = self.conv1(xray)
         # out = F.relu(self.bn1_x(out))
         out = F.relu(out)
-        out = nn.AdaptiveMaxPool2d((128, 128))(out)
+        out = nn.AdaptiveMaxPool2d((64, 64))(out)
 
         out = self.conv2(out)
         # out = F.relu(self.bn2_x(out))
         out = F.relu(out)
-        out = nn.AdaptiveMaxPool2d((64, 64))(out)
+        out = nn.AdaptiveMaxPool2d((32, 32))(out)
 
         out = self.conv3(out)
         # out = F.relu(self.bn3_x(out))
         out = F.relu(out)
-        out = nn.AdaptiveMaxPool2d((32, 32))(out)
+        out = nn.AdaptiveMaxPool2d((16, 16))(out)
 
 
         out = out.view((1, -1))
@@ -337,6 +338,223 @@ class layer6Net(nn.Module):
         out = F.relu(self.fc1(out))
         out = F.relu(self.fc2(out))
         out = F.relu(self.fc3(out))
+        out = self.fc_out(out)
+
+
+
+        return out
+
+
+class HomographyNet(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size):
+        super(HomographyNet, self).__init__()
+        # layers for CT
+        self.map1 = nn.Conv3d(input_size, hidden_size, 5, padding=0, bias=False)
+        self.bn1 = nn.BatchNorm3d(hidden_size)
+        self.map2 = nn.Conv3d(hidden_size, hidden_size, 5, padding=0, bias=False)
+        self.bn2 = nn.BatchNorm3d(hidden_size)
+        self.map3 = nn.Conv3d(hidden_size, hidden_size, 5, padding=0, bias=False)
+        self.bn3 = nn.BatchNorm3d(hidden_size)
+        self.map4 = nn.Conv3d(hidden_size, hidden_size, 5, padding=0, bias=False)
+        self.bn4 = nn.BatchNorm3d(hidden_size)
+        self.map5 = nn.Conv3d(hidden_size, hidden_size, 5, padding=0, bias=False)
+        self.bn5 = nn.BatchNorm3d(hidden_size)
+        self.map6 = nn.Conv3d(hidden_size, hidden_size, 5, padding=0, bias=False)
+        self.bn6 = nn.BatchNorm3d(hidden_size)
+        self.fc_ct = nn.Linear(hidden_size * 16 * 16 * 16, 512)
+
+        # layers for X-ray
+        self.conv1 = nn.Conv2d(input_size, hidden_size, 3, padding=1)
+        self.bn1_x = nn.BatchNorm2d(hidden_size)
+        self.conv2 = nn.Conv2d(hidden_size, hidden_size, 3, padding=1)
+        self.bn2_x = nn.BatchNorm2d(hidden_size)
+        self.conv3 = nn.Conv2d(hidden_size, hidden_size, 3, padding=1)
+        self.bn3_x = nn.BatchNorm2d(hidden_size)
+        self.conv4 = nn.Conv2d(hidden_size, hidden_size, 3, padding=1)
+        self.bn4_x = nn.BatchNorm2d(hidden_size)
+        self.conv5 = nn.Conv2d(hidden_size, hidden_size, 3, padding=1)
+        self.bn5_x = nn.BatchNorm2d(hidden_size)
+        self.conv6 = nn.Conv2d(hidden_size, hidden_size, 3, padding=1)
+        self.bn6_x = nn.BatchNorm2d(hidden_size)
+
+        self.fc_x = nn.Linear(hidden_size * 16 * 16, 512)
+        self.fc_out = nn.Linear(1024, output_size)
+
+    def forward(self, x, xray):
+        # CT
+        x = F.interpolate(x, (64, 64, 64))
+        out = self.map1(x)
+        out = self.bn1(out)
+        out = F.relu(out)
+
+        out = self.map2(out)
+        out = self.bn2(out)
+        out = F.relu(out)
+        out = nn.AdaptiveMaxPool3d((64, 64, 64))(out)
+
+        out = self.map3(out)
+        out = self.bn3(out)
+        out = F.relu(out)
+
+        out = self.map4(out)
+        out = self.bn4(out)
+        out = F.relu(out)
+        out = nn.AdaptiveMaxPool3d((32, 32, 32))(out)
+
+        out = self.map5(out)
+        out = self.bn5(out)
+        out = F.relu(out)
+
+        out = self.map6(out)
+        out = self.bn6(out)
+        out = F.relu(out)
+        out = nn.AdaptiveMaxPool3d((16, 16, 16))(out)
+
+        out = out.view((1, -1))
+        out_ct = F.relu(self.fc_ct(out))
+
+        # X-ray
+        xray = F.interpolate(xray, (xray.shape[2] // 2, xray.shape[3] // 2))
+        out = self.conv1(xray)
+        out = self.bn1_x(out)
+        out = F.relu(out)
+        out = self.conv2(out)
+        out = self.bn2_x(out)
+        out = F.relu(out)
+        out = nn.AdaptiveMaxPool2d((64, 64))(out)
+
+        out = self.conv3(out)
+        out = self.bn3_x(out)
+        out = F.relu(out)
+        out = self.conv4(out)
+        out = self.bn4_x(out)
+        out = F.relu(out)
+        out = nn.AdaptiveMaxPool2d((32, 32))(out)
+
+        out = self.conv5(out)
+        out = self.bn5_x(out)
+        out = F.relu(out)
+        out = self.conv6(out)
+        out = self.bn6_x(out)
+        out = F.relu(out)
+        out = nn.AdaptiveMaxPool2d((16, 16))(out)
+
+        out = out.view((1, -1))
+        out_xray = F.relu(self.fc_x(out))
+
+        out = torch.cat((out_ct, out_xray), dim=-1)
+        out = self.fc_out(out)
+
+
+
+        return out
+
+
+class HomographyNet_bn(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size):
+        super(HomographyNet_bn, self).__init__()
+        # layers for CT
+        self.map1 = nn.Conv3d(input_size, hidden_size, 5, padding=0, bias=False)
+        self.bn1 = nn.BatchNorm3d(hidden_size)
+        self.map2 = nn.Conv3d(hidden_size, hidden_size, 5, padding=0, bias=False)
+        self.bn2 = nn.BatchNorm3d(hidden_size)
+        self.map3 = nn.Conv3d(hidden_size, hidden_size, 5, padding=0, bias=False)
+        self.bn3 = nn.BatchNorm3d(hidden_size)
+        self.map4 = nn.Conv3d(hidden_size, hidden_size, 5, padding=0, bias=False)
+        self.bn4 = nn.BatchNorm3d(hidden_size)
+        self.map5 = nn.Conv3d(hidden_size, hidden_size, 5, padding=0, bias=False)
+        self.bn5 = nn.BatchNorm3d(hidden_size)
+        self.map6 = nn.Conv3d(hidden_size, hidden_size, 5, padding=0, bias=False)
+        self.bn6 = nn.BatchNorm3d(hidden_size)
+        self.fc_ct = nn.Linear(hidden_size*16*16*16, output_size*2)
+
+        # layers for X-ray
+        self.conv1 = nn.Conv2d(input_size, hidden_size, 3, padding=1)
+        self.bn1_x = nn.BatchNorm2d(hidden_size)
+        self.conv2 = nn.Conv2d(hidden_size, hidden_size, 3, padding=1)
+        self.bn2_x = nn.BatchNorm2d(hidden_size)
+        self.conv3 = nn.Conv2d(hidden_size, hidden_size, 3, padding=1)
+        self.bn3_x = nn.BatchNorm2d(hidden_size)
+        self.conv4 = nn.Conv2d(hidden_size, hidden_size, 3, padding=1)
+        self.bn4_x = nn.BatchNorm2d(hidden_size)
+        self.conv5 = nn.Conv2d(hidden_size, hidden_size, 3, padding=1)
+        self.bn5_x = nn.BatchNorm2d(hidden_size)
+        self.conv6 = nn.Conv2d(hidden_size, hidden_size, 3, padding=1)
+        self.bn6_x = nn.BatchNorm2d(hidden_size)
+
+
+        self.fc_x = nn.Linear(hidden_size * 16 * 16, output_size * 2)
+        self.fc1 = nn.Linear(output_size * 4, output_size * 2)
+        self.fc2 = nn.Linear(output_size * 2, output_size)
+        self.fc_out = nn.Linear(output_size, output_size)
+
+
+    def forward(self, x, xray):
+        # CT
+        x = F.interpolate(x, (64, 64, 64))
+        out = self.map1(x)
+        out = self.bn1(out)
+        out = F.relu(out)
+
+        out = self.map2(out)
+        out = self.bn2(out)
+        out = F.relu(out)
+        out = nn.AdaptiveMaxPool3d((64, 64, 64))(out)
+
+        out = self.map3(out)
+        out = self.bn3(out)
+        out = F.relu(out)
+
+        out = self.map4(out)
+        out = self.bn4(out)
+        out = F.relu(out)
+        out = nn.AdaptiveMaxPool3d((32, 32, 32))(out)
+
+        out = self.map5(out)
+        out = self.bn5(out)
+        out = F.relu(out)
+
+        out = self.map6(out)
+        out = self.bn6(out)
+        out = F.relu(out)
+        out = nn.AdaptiveMaxPool3d((16, 16, 16))(out)
+
+        out = out.view((1, -1))
+        out_ct = F.relu(self.fc_ct(out))
+
+        # X-ray
+        xray = F.interpolate(xray, (xray.shape[2]//2, xray.shape[3]//2))
+        out = self.conv1(xray)
+        out = self.bn1_x(out)
+        out = F.relu(out)
+        out = self.conv2(out)
+        out = self.bn2_x(out)
+        out = F.relu(out)
+        out = nn.AdaptiveMaxPool2d((64, 64))(out)
+
+        out = self.conv3(out)
+        out = self.bn3_x(out)
+        out = F.relu(out)
+        out = self.conv4(out)
+        out = self.bn4_x(out)
+        out = F.relu(out)
+        out = nn.AdaptiveMaxPool2d((32, 32))(out)
+
+        out = self.conv5(out)
+        out = self.bn5_x(out)
+        out = F.relu(out)
+        out = self.conv6(out)
+        out = self.bn6_x(out)
+        out = F.relu(out)
+        out = nn.AdaptiveMaxPool2d((16, 16))(out)
+
+
+        out = out.view((1, -1))
+        out_xray = F.relu(self.fc_x(out))
+
+        out = torch.cat((out_ct, out_xray), dim=-1)
+        out = F.relu(self.fc1(out))
+        out = F.relu(self.fc2(out))
         out = self.fc_out(out)
 
 
@@ -437,6 +655,58 @@ class layer8Net(nn.Module):
 
 
         return out
+
+
+## PointNet
+
+
+
+class PointReg(nn.Module):
+    def __init__(self, out_dim, normal_channel=False):
+        super(PointReg, self).__init__()
+        in_channel = 3 if normal_channel else 0
+        self.normal_channel = normal_channel
+        self.sa1 = PointNetSetAbstractionMsg(256, [0.1, 0.2, 0.4], [8, 16, 64], in_channel, [[16, 16, 32], [32, 32, 64], [32, 48, 64]])
+        self.sa2 = PointNetSetAbstractionMsg(64, [0.2, 0.4, 0.8], [16, 32, 64], 160, [[32, 32, 64], [64, 64, 128], [64, 64, 128]])
+        self.sa3 = PointNetSetAbstraction(None, None, None, 320 + 3, [64, 64, 128], True)
+
+        self.sa1_x = PointNetSetAbstractionMsg(256, [0.1, 0.2, 0.4], [8, 16, 64], -1, [[16, 16, 32], [32, 32, 64], [32, 48, 64]])
+        self.sa2_x = PointNetSetAbstractionMsg(64, [0.2, 0.4, 0.8], [16, 32, 64], 159, [[32, 32, 64], [64, 64, 128], [64, 64, 128]])
+        self.sa3_x = PointNetSetAbstraction(None, None, None, 320 + 2, [64, 64, 128], True)
+
+        self.fc1 = nn.Linear(256, 128)
+        self.bn1 = nn.BatchNorm1d(128)
+        self.drop1 = nn.Dropout(0.4)
+        self.fc2 = nn.Linear(128, 64)
+        self.bn2 = nn.BatchNorm1d(64)
+        self.drop2 = nn.Dropout(0.5)
+        self.fc3 = nn.Linear(64, out_dim)
+
+    def forward(self, xyz, xy):
+        B, _, _ = xyz.shape
+        if self.normal_channel:
+            norm = xyz[:, 3:, :]
+            xyz = xyz[:, :3, :]
+            xy = xy[:, :2, :]
+        else:
+            norm = None
+        l1_xyz, l1_points = self.sa1(xyz, norm)
+        l2_xyz, l2_points = self.sa2(l1_xyz, l1_points)
+        l3_xyz, l3_points = self.sa3(l2_xyz, l2_points)
+        x = l3_points.view(B, 128)
+
+        l1_xy, l1_points = self.sa1_x(xy, norm)
+        l2_xy, l2_points = self.sa2_x(l1_xy, l1_points)
+        l3_xy, l3_points = self.sa3_x(l2_xy, l2_points)
+        x_2 = l3_points.view(B, 128)
+
+        x = torch.cat((x, x_2), dim=1)
+        x = self.drop1(F.relu(self.fc1(x)))
+        x = self.drop2(F.relu(self.fc2(x)))
+        x = self.fc3(x)
+
+        return x
+
 
 
 if __name__ == "__main__":

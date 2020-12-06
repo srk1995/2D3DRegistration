@@ -82,13 +82,15 @@ class mapping():
 
         return min_lm, stack_road, return_f
 
-data = np.load("/home/whddltkf0889/바탕화면/region_grow/U-net2/0b6cfd56422fa8318fb39c4bc6043fbe_00/new_3d_RG_npy.npy")
 
-a = mapping(data)
-xyz = np.where(a.skel == 1)
-sp = np.array([xyz[0][2], xyz[1][2], xyz[2][2]])
-fp = np.array([xyz[0][10000], xyz[1][10000], xyz[2][10000]])
-result = a.get_road(sp, fp)
+if __name__ == "__main__":
+    data = np.load("/home/whddltkf0889/바탕화면/region_grow/U-net2/0b6cfd56422fa8318fb39c4bc6043fbe_00/new_3d_RG_npy.npy")
+
+    a = mapping(data)
+    xyz = np.where(a.skel == 1)
+    sp = np.array([xyz[0][2], xyz[1][2], xyz[2][2]])
+    fp = np.array([xyz[0][10000], xyz[1][10000], xyz[2][10000]])
+    result = a.get_road(sp, fp)
 
 
 

@@ -1,6 +1,6 @@
 import os
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "9,8"
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+# os.environ["CUDA_VISIBLE_DEVICES"] = "9,8"
 
 import torch
 import numpy as np
@@ -30,9 +30,10 @@ class SegData(Dataset):
         self.s = 1
         self.dlist = [os.path.join(self.root, x) for x in os.listdir(root)]
         self.transform = transform
-        self.rotation = np.array([np.linspace(-10, 10, 3)] * self.s).reshape(-1)
-        self.translation = np.array([np.linspace(-10, 10, 3)] * self.s).reshape(-1)
-        self.label = cartesian_product(self.rotation, self.rotation, self.rotation, self.translation, self.translation, self.translation)
+        self.zeros = np.array([0], dtype=np.float64).reshape(-1)
+        self.rotation = np.array([np.linspace(-10, 10, 5)] * self.s).reshape(-1)
+        self.translation = np.array([np.linspace(-5, 5, 3)] * self.s).reshape(-1)
+        self.label = cartesian_product(self.zeros, self.zeros, self.rotation, self.zeros, self.zeros, self.zeros)
         self.CT = []
 
         # self.drr_win = None
@@ -40,24 +41,24 @@ class SegData(Dataset):
 
         # self.num_samples = len(self.dlist)
         if train:
-            file = open('train_256.csv', 'w')
+            file = open('train_z_xyz.csv', 'w')
         else:
-            file = open('test_256.csv', 'w')
+            file = open('test_z_xyz.csv', 'w')
         for f in self.dlist:
             # path = os.path.join(f, 'xray_256_complex')
             # if not os.path.isdir(path):
             #     os.mkdir(path)
             CT = os.path.join(f, 'numpy_RG_npy.npy')
 
-            CT_out = np.load(CT)
-            CT_out = np.expand_dims(np.array(CT_out, dtype=np.float32), axis=-1).transpose((3, 2, 1, 0))
-            CT_out = torch.tensor(CT_out)
+            # CT_out = np.load(CT)
+            # CT_out = np.expand_dims(np.array(CT_out, dtype=np.float32), axis=-1).transpose((3, 2, 1, 0))
+            # CT_out = torch.tensor(CT_out)
             # T = torch.zeros(6, dtype=torch.float32)
             for i, T in enumerate(self.label, 1):
                 # drr = utils.DRR_generation(torch.tensor(CT_out), torch.tensor(T, dtype=torch.float32).view(1, 6), 1)
                 # drr_path = os.path.join(path, str(int(i)))
                 # np.save(drr_path, drr.cpu().numpy())
-                m = "{},{},{},{},{},{},{}\n".format(CT, str(T[0]), str(T[1]), str(T[2]), str(T[3]), str(T[4]), str(T[5]))
+                m = "{},{}_{}_{}_{}_{}_{}\n".format(CT, str(T[0]), str(T[1]), str(T[2]), str(T[3]), str(T[4]), str(T[5]))
                 file.write(m)
 
         # im = drr.view((960, 1240)).cpu().numpy()
