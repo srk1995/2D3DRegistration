@@ -2,12 +2,13 @@ import os
 import torch
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
+import torch.nn.functional as F
 from PIL import Image
 from torchvision import transforms
 import pymesh
 import visdom
 import utils
-import skeleton3
+import skeleton2
 import time
 
 
@@ -199,7 +200,7 @@ class SegData_csv(Dataset):
         # tic = time.clock()
         catheter = []
         while len(catheter) == 0:
-            a = skeleton3.mapping(CT)
+            a = skeleton2.mapping(CT)
             skel = a.skel
 
             xyz = np.where(skel == 1)
@@ -229,6 +230,162 @@ class SegData_csv(Dataset):
     def __len__(self):
         return len(self.dlist)
 
+
+class SegData_catheter(Dataset):
+    def __init__(self, file, proj_pix, transform):
+        """
+        :param root: the path of data
+        :param transform: transforms to make the output tensor
+
+        """
+        self.dlist = np.loadtxt(file, delimiter=",", dtype=str)
+        self.transform = transform
+        self.proj_pix = proj_pix
+
+        self.drr_win = None
+        self.vis = visdom.Visdom()
+        self.tt = 0
+        self.ttt = 0
+
+        # self.num_samples = len(self.dlist)
+
+    def __getitem__(self, index):
+        """
+
+        :param index:
+        :return: CT_out: [C, D, H, W] == [1, 393, 512, 512]
+        :return drr: [C, H, W]
+        :return T : [6]
+        """
+
+        tt = self.dlist[index, :]
+
+        CT = os.path.join(tt[0])
+
+        CT= np.load(CT)
+        CT_out = np.expand_dims(np.array(CT, dtype=np.float32), axis=-1).transpose((3, 2, 1, 0))
+        CT_out = torch.tensor(CT_out)
+
+        T = torch.tensor(np.array(tt[1:][0].split('_'), dtype=np.float32), dtype=torch.float32)
+
+        # tic = time.clock()
+        # catheter = []
+        # while len(catheter) == 0:
+        #     a = skeleton2.mapping(CT)
+        #     skel = a.skel
+        #
+        #     xyz = np.where(skel == 1)
+        #     idx = np.random.randint(len(xyz[0]), size=2)
+        #     sp = np.array([xyz[0][idx[0]], xyz[1][idx[0]], xyz[2][idx[0]]])
+        #     fp = np.array([xyz[0][idx[1]], xyz[1][idx[1]], xyz[2][idx[1]]])
+        #     catheter = a.get_road(sp, fp)
+        #
+        # catheter = np.array(catheter)
+        # C = np.zeros_like(CT)
+        # C[catheter[:, 0], catheter[:, 1], catheter[:, 2]] = 1
+        # C = np.expand_dims(np.array(C, dtype=np.float32), axis=-1).transpose((3, 2, 1, 0))
+        # C = torch.tensor(C)
+
+        # xray = utils.DRR_generation(torch.tensor(C), T.view(1, 6), 1, self.proj_pix)
+        # toc = time.clock()
+        # print(toc - tic)
+
+        ttt = tt[0].split('/')
+        ttt = ttt[:-1]
+        t = '/'
+        for x in ttt:
+            t = os.path.join(t, x)
+        xray = np.load(os.path.join(t, tt[-1] + '.npy'))
+
+        if (CT_out.min() != 0) or (CT_out.max() != 1):
+            print(CT)
+        self.tt += sum(sum(sum(CT == 1)))
+        self.ttt += 1
+        ct_mean = torch.mean(CT_out)
+        ct_std = torch.std(CT_out)
+        CT_out = (CT_out - ct_mean) / ct_std
+
+        return CT_out, xray, T, self.tt / self.ttt
+
+    def __len__(self):
+        return len(self.dlist)
+
+
+
+
+class SegData_catheter_pt(Dataset):
+    def __init__(self, file, proj_pix, transform):
+        """
+        :param root: the path of data
+        :param transform: transforms to make the output tensor
+
+        """
+        self.dlist = np.loadtxt(file, delimiter=",", dtype=str)
+        self.transform = transform
+        self.proj_pix = proj_pix
+
+        self.drr_win = None
+        self.vis = visdom.Visdom()
+        self.tt = 0
+        self.ttt = 0
+
+        # self.num_samples = len(self.dlist)
+
+    def __getitem__(self, index):
+        """
+
+        :param index:
+        :return: CT_out: [C, D, H, W] == [1, 393, 512, 512]
+        :return drr: [C, H, W]
+        :return T : [6]
+        """
+
+        tt = self.dlist[index, :]
+
+        CT = os.path.join(tt[0])
+
+        CT= np.load(CT)
+        CT_out = np.expand_dims(np.array(CT, dtype=np.float32), axis=-1).transpose((3, 2, 1, 0))
+        CT_out = torch.tensor(CT_out)
+
+        T = torch.tensor(np.array(tt[1:][0].split('_'), dtype=np.float32), dtype=torch.float32)
+
+        # tic = time.clock()
+        # catheter = []
+        # while len(catheter) == 0:
+        #     a = skeleton2.mapping(CT)
+        #     skel = a.skel
+        #
+        #     xyz = np.where(skel == 1)
+        #     idx = np.random.randint(len(xyz[0]), size=2)
+        #     sp = np.array([xyz[0][idx[0]], xyz[1][idx[0]], xyz[2][idx[0]]])
+        #     fp = np.array([xyz[0][idx[1]], xyz[1][idx[1]], xyz[2][idx[1]]])
+        #     catheter = a.get_road(sp, fp)
+        #
+        # catheter = np.array(catheter)
+        # C = np.zeros_like(CT)
+        # C[catheter[:, 0], catheter[:, 1], catheter[:, 2]] = 1
+        # C = np.expand_dims(np.array(C, dtype=np.float32), axis=-1).transpose((3, 2, 1, 0))
+        # C = torch.tensor(C)
+
+        # xray = utils.DRR_generation(torch.tensor(C), T.view(1, 6), 1, self.proj_pix)
+        # toc = time.clock()
+        # print(toc - tic)
+
+        ttt = tt[0].split('/')
+        ttt = ttt[:-1]
+        t = '/'
+        for x in ttt:
+            t = os.path.join(t, x)
+        xray = np.load(os.path.join(t, tt[-1] + '.npy'))
+
+        CT_out = np.array(np.where(F.interpolate(CT_out[0], size=256)))
+        xray = np.array(np.where(xray[0] != xray.min()))
+
+        return CT_out, xray, T
+
+    def __len__(self):
+        return len(self.dlist)
 
 
 class Kaist_Data(Dataset):
@@ -278,20 +435,20 @@ if __name__ == "__main__":
     # train_path = '/home/srk1995/pub/db/Dicom_Image_Unet_pseudo/Train/'
     # test_path = '/home/srk1995/pub/db/Dicom_Image_Unet_pseudo/Test/'
 
-    train_file = './train_256.csv'
-    test_file = './test_256.csv'
+    train_file = './train_z.csv'
+    test_file = './test_z.csv'
 
 
     # cTdataloader = Data(root, transform=transforms.ToTensor())
-    kdata_train = SegData_csv(train_file, transform=transforms.ToTensor())
-    # kdata_test = SegData_csv(test_file, transform=transforms.ToTensor())
+    kdata_train = SegData_catheter(train_file, [256, 256], transform=transforms.ToTensor())
+    # kdata_test = SegData_catheter(test_file, transform=transforms.ToTensor())
 
     # kdata_train = Data(train_path, transform=transforms.ToTensor())
     # kdata_test = Data(test_path, transform=transforms.ToTensor())
 
-    trainloader = DataLoader(kdata_train, batch_size=2, shuffle=True, num_workers=0)
+    trainloader = DataLoader(kdata_train, batch_size=1, shuffle=True, num_workers=0)
     # testloader = DataLoader(kdata_test, batch_size=1, shuffle=False, num_workers=0)
     for i, data in enumerate(trainloader):
-        print(data)
+        print(data[3])
 
     print("EOP")

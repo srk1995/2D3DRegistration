@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import utils
 import visdom
-from dataloader import SegData_csv
+from dataloader import SegData_csv, SegData_catheter_pt
 from torchvision import transforms
 from torch.utils.data import DataLoader
 import cv2
@@ -38,29 +38,32 @@ def train(net, loader, optimizer, drr_win, xray_win, env):
         optimizer.zero_grad()
 
         # Train -> Back propagation -> Optimization.
-        outputs = net(inputs, inputs_X)
+        if (torch.sum(inputs_X) != 0) and (inputs_X.size()[2] > 63):
+            outputs = net(inputs, inputs_X)
 
-        drr = utils.DRR_generation(data[0].view(1, inputs.shape[2], inputs.shape[3], inputs.shape[4]), outputs, train_batch_num, proj_pix).view((1, proj_pix[0], proj_pix[1]))
-        loss = mse(outputs, labels) + alpha * mse(drr, data[1].cuda(1))
+            # drr = utils.DRR_generation(data[0].view(1, inputs.shape[2], inputs.shape[3], inputs.shape[4]), outputs, train_batch_num, proj_pix).view((1, proj_pix[0], proj_pix[1]))
+            # loss = mse(outputs, labels) + alpha * mse(drr.cuda(), inputs_X)
+            loss = mse(outputs, labels)
 
-        loss.backward()
-        optimizer.step()
-        #
-        # # tt = drr[0].cpu().numpy().squeeze()
-        # tt = data[1][0].cpu().numpy().squeeze()
-        # if (tt.max() != tt.min()):
-        #     tt = (tt - tt.min()) / (tt.max() - tt.min())
-        # cv2.imshow('img', tt)
-        # cv2.waitKey(10)
-
-
-        xray_win = utils.PlotImage(vis=vis, img=data[1][0].cpu().numpy().squeeze(), win=xray_win, env=env,
-                                   title="Train X-ray")
-        drr_win = utils.PlotImage(vis=vis, img=drr[0].cpu().numpy().squeeze(), win=drr_win, env=env, title="Train DRR")
+            loss.backward()
+            optimizer.step()
+            #
+            # # tt = drr[0].cpu().numpy().squeeze()
+            # tt = data[1][0].cpu().numpy().squeeze()
+            # if (tt.max() != tt.min()):
+            #     tt = (tt - tt.min()) / (tt.max() - tt.min())
+            # cv2.imshow('img', tt)
+            # cv2.waitKey(10)
 
 
-        train_loss += mse(outputs, labels).item() + mse(drr, data[1].cuda(1)).item()
-        num += data[0].size(0)
+            # xray_win = utils.PlotImage(vis=vis, img=data[1][0].cpu().numpy().squeeze(), win=xray_win, env=env,
+            #                            title="Train X-ray")
+            # drr_win = utils.PlotImage(vis=vis, img=drr[0].cpu().numpy().squeeze(), win=drr_win, env=env, title="Train DRR")
+
+
+            # train_loss += mse(outputs, labels).item() + mse(drr.cuda(), inputs_X).item()
+            train_loss += mse(outputs, labels).item()
+            num += data[0].size(0)
 
     return train_loss / num, drr_win, xray_win
 
@@ -79,36 +82,38 @@ def test(net, loader, optimizer, drr_win, xray_win, env):
         optimizer.zero_grad()
 
         # Feed forward
-        outputs = net(inputs, inputs_X)
+        if (torch.sum(inputs_X) != 0) and (inputs_X.size()[2] > 63):
+            outputs = net(inputs, inputs_X)
 
-        drr = utils.DRR_generation(data[0].view(1, inputs.shape[2], inputs.shape[3], inputs.shape[4]), outputs, train_batch_num, proj_pix).view((1, proj_pix[0], proj_pix[1]))
-        loss = mse(outputs, labels) + mse(drr, data[1].cuda(1))
+            # drr = utils.DRR_generation(data[0].view(1, inputs.shape[2], inputs.shape[3], inputs.shape[4]), outputs, train_batch_num, proj_pix).view((1, proj_pix[0], proj_pix[1]))
+            # loss = mse(outputs, labels) + mse(drr.cuda(), inputs_X)
+            loss = mse(outputs, labels)
 
-        xray_win = utils.PlotImage(vis=vis, img=data[1][0].cpu().numpy().squeeze(), win=xray_win, env=env,
-                                   title="Test X-ray")
-        drr_win = utils.PlotImage(vis=vis, img=drr[0].cpu().numpy().squeeze(), win=drr_win, env=env, title="Test DRR")
+            # xray_win = utils.PlotImage(vis=vis, img=data[1][0].cpu().numpy().squeeze(), win=xray_win, env=env,
+            #                            title="Test X-ray")
+            # drr_win = utils.PlotImage(vis=vis, img=drr[0].cpu().numpy().squeeze(), win=drr_win, env=env, title="Test DRR")
 
-        test_loss += loss.item()
-        num += data[0].size(0)
+            test_loss += loss.item()
+            num += data[0].size(0)
 
     return test_loss / num, drr_win, xray_win
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Preocess some numbers.")
-    parser.add_argument('--net', type=str, help='Network architecture, 6layer, 8layer, unet', default='6layer')
-    parser.add_argument('--alpha', type=float, help='alpha', default=1e-4)
+    parser.add_argument('--net', type=str, help='Network architecture, 6layer, 8layer, unet, homo, homo_bn', default='pointnet2')
+    parser.add_argument('--alpha', type=float, help='alpha', default=1e-2)
     parser.add_argument('--lr', type=float, help='Learning rate', default=1e-3)
-    parser.add_argument('--gpu', type=str, help='gpu number', default='0, 1')
+    parser.add_argument('--gpu', type=str, help='gpu number', default='1')
 
     args = parser.parse_args()
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-    env = "seg_" + args.net + "_alpha_" + str(args.alpha) + "lr_" + str(args.lr)
+    env = "seg_" + args.net + "_alpha_" + str(args.alpha) + "_lr_" + str(args.lr)
 
-    train_file = './train_256.csv'
-    test_file = './test_256.csv'
+    train_file = './train_z.csv'
+    test_file = './test_z.csv'
     PATH = './saved/'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     vis = visdom.Visdom()
@@ -132,14 +137,20 @@ if __name__ == "__main__":
         transforms.ToTensor(),
         # transforms.Resize((64, 64))
     ])
-    train_dataset = SegData_csv(train_file, proj_pix, transform=transfroms_)
-    test_dataset = SegData_csv(test_file, proj_pix, transform=transfroms_)
+    train_dataset = SegData_catheter_pt(train_file, proj_pix, transform=transfroms_)
+    test_dataset = SegData_catheter_pt(test_file, proj_pix, transform=transfroms_)
     trainloader = DataLoader(train_dataset, batch_size=train_batch_num, shuffle=True, num_workers=0)
     testloader = DataLoader(test_dataset, batch_size=train_batch_num, shuffle=False, num_workers=0)
     if args.net == '6layer':
         net = ConvNet.layer6Net(1, 20, 6)
     elif args.net == '8layer':
         net = ConvNet.layer8Net(1, 20, 6)
+    elif args.net == 'homo':
+        net = ConvNet.HomographyNet(1, 20, 6)
+    elif args.net == 'homo_bn':
+        net = ConvNet.HomographyNet_bn(1, 20, 6)
+    elif args.net == 'pointnet2':
+        net = ConvNet.PointReg(6, False)
     else:
         net = ConvNet.UNet(1, 20, 6)
 
@@ -152,6 +163,7 @@ if __name__ == "__main__":
 
     best_loss = np.inf
 
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
 
     # vis.close(env="seg_6layer")
     if os.path.isfile("./saved/BEST" + env[3:] + ".pth"):
@@ -166,6 +178,7 @@ if __name__ == "__main__":
         train_loss, train_drr_win, train_xray_win = train(net, trainloader, optimizer, train_drr_win, train_xray_win,
                                                           env)
         test_loss, test_drr_win, test_xray_win = test(net, testloader, optimizer, test_drr_win, test_xray_win, env)
+        scheduler.step()
         # train_scheduler.step(epoch)
 
         # train_loss_win = utils.PlotLoss(vis=vis, x=torch.tensor([epoch]), y=torch.tensor([train_loss]), win=train_loss_win, env=env,

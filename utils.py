@@ -262,7 +262,7 @@ def DRR_generation(CT, R_pred, num, proj_pix):
 
     sio.savemat('CT_ray.mat', {'CT': CT.numpy(), 'ray': backp.cpu().numpy()})
 
-    zz = torch.tensor([-(CT.size(1)-1)/2, (CT.size(1)-1)/2], dtype=torch.float32)
+    zz = torch.tensor([-(CT.size(1)-1)/2, (CT.size(1)-1)/2], dtype=torch.float32).cuda(1)
     zz = (zz - (min_v[2] + max_v[2]) / 2) / ((max_v[2] - min_v[2]) / 2)
     # p0 = t.view((3, 1)).repeat(1, proj_pix[0] * proj_pix[1])
     p0 = n_backp[:, :, 0, :].squeeze().transpose(1, 0)
