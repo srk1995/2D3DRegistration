@@ -666,21 +666,21 @@ class PointReg(nn.Module):
         super(PointReg, self).__init__()
         in_channel = 3 if normal_channel else 0
         self.normal_channel = normal_channel
-        self.sa1 = PointNetSetAbstractionMsg(256, [0.1, 0.2, 0.4], [8, 16, 64], in_channel, [[16, 16, 32], [32, 32, 64], [32, 48, 64]])
-        self.sa2 = PointNetSetAbstractionMsg(64, [0.2, 0.4, 0.8], [16, 32, 64], 160, [[32, 32, 64], [64, 64, 128], [64, 64, 128]])
-        self.sa3 = PointNetSetAbstraction(None, None, None, 320 + 3, [64, 64, 128], True)
+        self.sa1 = PointNetSetAbstractionMsg(512, [0.1, 0.2, 0.4], [16, 32, 128], in_channel, [[32, 32, 64], [64, 64, 128], [64, 96, 128]])
+        self.sa2 = PointNetSetAbstractionMsg(128, [0.2, 0.4, 0.8], [32, 64, 128], 320, [[64, 64, 128], [128, 128, 256], [128, 128, 256]])
+        self.sa3 = PointNetSetAbstraction(None, None, None, 640 + 3, [256, 256, 512], True)
 
-        self.sa1_x = PointNetSetAbstractionMsg(256, [0.1, 0.2, 0.4], [8, 16, 64], -1, [[16, 16, 32], [32, 32, 64], [32, 48, 64]])
-        self.sa2_x = PointNetSetAbstractionMsg(64, [0.2, 0.4, 0.8], [16, 32, 64], 159, [[32, 32, 64], [64, 64, 128], [64, 64, 128]])
-        self.sa3_x = PointNetSetAbstraction(None, None, None, 320 + 2, [64, 64, 128], True)
+        self.sa1_x = PointNetSetAbstractionMsg(512, [0.1, 0.2, 0.4], [16, 32, 128], -1, [[32, 32, 64], [64, 64, 128], [64, 96, 128]])
+        self.sa2_x = PointNetSetAbstractionMsg(128, [0.2, 0.4, 0.8], [32, 64, 128], 319, [[64, 64, 128], [128, 128, 256], [128, 128, 256]])
+        self.sa3_x = PointNetSetAbstraction(None, None, None, 640 + 2, [256, 256, 512], True)
 
-        self.fc1 = nn.Linear(256, 128)
-        self.bn1 = nn.BatchNorm1d(128)
+        self.fc1 = nn.Linear(1024, 512)
+        self.bn1 = nn.BatchNorm1d(512)
         self.drop1 = nn.Dropout(0.4)
-        self.fc2 = nn.Linear(128, 64)
-        self.bn2 = nn.BatchNorm1d(64)
+        self.fc2 = nn.Linear(512, 256)
+        self.bn2 = nn.BatchNorm1d(256)
         self.drop2 = nn.Dropout(0.5)
-        self.fc3 = nn.Linear(64, out_dim)
+        self.fc3 = nn.Linear(256, out_dim)
 
     def forward(self, xyz, xy):
         B, _, _ = xyz.shape
@@ -693,12 +693,12 @@ class PointReg(nn.Module):
         l1_xyz, l1_points = self.sa1(xyz, norm)
         l2_xyz, l2_points = self.sa2(l1_xyz, l1_points)
         l3_xyz, l3_points = self.sa3(l2_xyz, l2_points)
-        x = l3_points.view(B, 128)
+        x = l3_points.view(B, 512)
 
         l1_xy, l1_points = self.sa1_x(xy, norm)
         l2_xy, l2_points = self.sa2_x(l1_xy, l1_points)
         l3_xy, l3_points = self.sa3_x(l2_xy, l2_points)
-        x_2 = l3_points.view(B, 128)
+        x_2 = l3_points.view(B, 512)
 
         x = torch.cat((x, x_2), dim=1)
         x = self.drop1(F.relu(self.fc1(x)))

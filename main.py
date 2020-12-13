@@ -33,16 +33,18 @@ def train(net, loader, optimizer, drr_win, xray_win, env):
         # inputs and labels.
         inputs = data[0]
         inputs_X = data[1]
+        CT_v = data[3]
+        xray_v = data[4].cuda()
         inputs, inputs_X, labels = inputs.cuda(), inputs_X.cuda(), data[2].cuda()
         # Set the gradient to be 0.
         optimizer.zero_grad()
 
         # Train -> Back propagation -> Optimization.
-        if (torch.sum(inputs_X) != 0) and (inputs_X.size()[2] > 63):
+        if (torch.sum(inputs_X) != 0) and (inputs_X.size()[2] > 128):
             outputs = net(inputs, inputs_X)
 
-            # drr = utils.DRR_generation(data[0].view(1, inputs.shape[2], inputs.shape[3], inputs.shape[4]), outputs, train_batch_num, proj_pix).view((1, proj_pix[0], proj_pix[1]))
-            # loss = mse(outputs, labels) + alpha * mse(drr.cuda(), inputs_X)
+            # drr = utils.DRR_generation(CT_v.view(1, CT_v.shape[2], CT_v.shape[3], CT_v.shape[4]), outputs, train_batch_num, proj_pix).view((1, proj_pix[0], proj_pix[1]))
+            # loss = mse(outputs, labels) + alpha * mse(drr.cuda(), xray_v)
             loss = mse(outputs, labels)
 
             loss.backward()
@@ -77,16 +79,18 @@ def test(net, loader, optimizer, drr_win, xray_win, env):
         # inputs and labels.
         inputs = data[0]
         inputs_X = data[1]
+        # CT_v = data[3]
+        # xray_v = data[4].cuda()
         inputs, inputs_X, labels= inputs.cuda(), inputs_X.cuda(), data[2].cuda()
         # Set the gradient to be 0.
         optimizer.zero_grad()
 
         # Feed forward
-        if (torch.sum(inputs_X) != 0) and (inputs_X.size()[2] > 63):
+        if (torch.sum(inputs_X) != 0) and (inputs_X.size()[2] > 128):
             outputs = net(inputs, inputs_X)
 
-            # drr = utils.DRR_generation(data[0].view(1, inputs.shape[2], inputs.shape[3], inputs.shape[4]), outputs, train_batch_num, proj_pix).view((1, proj_pix[0], proj_pix[1]))
-            # loss = mse(outputs, labels) + mse(drr.cuda(), inputs_X)
+            # drr = utils.DRR_generation(CT_v.view(1, CT_v.shape[2], CT_v.shape[3], CT_v.shape[4]), outputs, train_batch_num, proj_pix).view((1, proj_pix[0], proj_pix[1]))
+            # loss = mse(outputs, labels) + mse(drr.cuda(), xray_v)
             loss = mse(outputs, labels)
 
             # xray_win = utils.PlotImage(vis=vis, img=data[1][0].cpu().numpy().squeeze(), win=xray_win, env=env,

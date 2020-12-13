@@ -9,6 +9,7 @@ import pymesh
 import visdom
 import utils
 import skeleton2
+from scipy import ndimage
 import time
 
 
@@ -345,8 +346,11 @@ class SegData_catheter_pt(Dataset):
         CT = os.path.join(tt[0])
 
         CT= np.load(CT)
-        CT_out = np.expand_dims(np.array(CT, dtype=np.float32), axis=-1).transpose((3, 2, 1, 0))
-        CT_out = torch.tensor(CT_out)
+        CT_v = np.expand_dims(np.array(CT, dtype=np.float32), axis=-1).transpose((3, 2, 1, 0))
+        CT_v = torch.tensor(CT_v)
+        str_3D = ndimage.morphology.generate_binary_structure(3, 1)
+        big_str_3D = ndimage.morphology.iterate_structure(str_3D, 3)
+        arr_out_3D = ndimage.morphology.binary_erosion(CT_v[0], big_str_3D)
 
         T = torch.tensor(np.array(tt[1:][0].split('_'), dtype=np.float32), dtype=torch.float32)
 
@@ -377,12 +381,13 @@ class SegData_catheter_pt(Dataset):
         t = '/'
         for x in ttt:
             t = os.path.join(t, x)
-        xray = np.load(os.path.join(t, tt[-1] + '.npy'))
+        xray_v = np.load(os.path.join(t, tt[-1] + '.npy'))
 
-        CT_out = np.array(np.where(F.interpolate(CT_out[0], size=256)))
-        xray = np.array(np.where(xray[0] != xray.min()))
+        CT_out = np.array(np.where(F.interpolate(torch.tensor(arr_out_3D, dtype=torch.float32), size=128)))
+        # CT_out = np.array(np.where(F.interpolate(CT_v[0], size=128)))
+        xray = np.array(np.where(xray_v[0] != xray_v.min()))
 
-        return CT_out, xray, T
+        return CT_out, xray, T, CT_v, xray_v
 
     def __len__(self):
         return len(self.dlist)
