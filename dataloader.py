@@ -315,7 +315,7 @@ class SegData_catheter(Dataset):
 
 
 class SegData_catheter_pt(Dataset):
-    def __init__(self, file, proj_pix, transform):
+    def __init__(self, file, proj_pix, c, transform):
         """
         :param root: the path of data
         :param transform: transforms to make the output tensor
@@ -327,8 +327,7 @@ class SegData_catheter_pt(Dataset):
 
         self.drr_win = None
         self.vis = visdom.Visdom()
-        self.tt = 0
-        self.ttt = 0
+        self.c = c
 
         # self.num_samples = len(self.dlist)
 
@@ -353,6 +352,7 @@ class SegData_catheter_pt(Dataset):
         arr_out_3D = ndimage.morphology.binary_erosion(CT_v[0], big_str_3D)
 
         T = torch.tensor(np.array(tt[1:][0].split('_'), dtype=np.float32), dtype=torch.float32)
+        T = utils.OnehotEncoding(T, self.c)
 
         # tic = time.clock()
         # catheter = []
@@ -387,7 +387,7 @@ class SegData_catheter_pt(Dataset):
         # CT_out = np.array(np.where(F.interpolate(CT_v[0], size=128)))
         xray = np.array(np.where(xray_v[0] != xray_v.min()))
 
-        return CT_out, xray, T, CT_v, xray_v
+        return CT_out, xray, T, CT_v, xray_v, self.c
 
     def __len__(self):
         return len(self.dlist)
