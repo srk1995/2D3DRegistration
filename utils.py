@@ -15,11 +15,7 @@ def OnehotEncoding(arr, c):
     return out
 
 def OnehotDecoding(arr, c):
-    out = torch.zeros((1, 6)).type(dtype=torch.long).cuda()
-    ind = torch.where(arr == 1)
-
-    out[ind[0], ind[2]] = ind[1]
-    out = (out - c // 2) * c
+    out = (arr - c // 2) * c
 
     return out
 

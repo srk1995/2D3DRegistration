@@ -42,9 +42,9 @@ def train(net, loader, optimizer, drr_win, xray_win, env):
         # Train -> Back propagation -> Optimization.
         if (torch.sum(inputs_X) != 0) and (inputs_X.size()[2] > 128):
             outputs = net(inputs, inputs_X)
-            # _, pred = torch.max(outputs, 0)
 
-            # T_pred = utils.OnehotDecoding(pred, args.qt).cuda()
+            # _, pred = torch.max(outputs, 1)
+            # T_pred = utils.OnehotDecoding(pred, args.qt)
             # drr = utils.DRR_generation(CT_v.view(1, CT_v.shape[2], CT_v.shape[3], CT_v.shape[4]), T_pred, train_batch_num, proj_pix).view((1, proj_pix[0], proj_pix[1]))
             # loss = bce(outputs, labels) + alpha * mse(drr.cuda(), xray_v)
             loss = bce(outputs, labels)
