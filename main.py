@@ -66,7 +66,7 @@ def train(net, loader, optimizer, drr_win, xray_win, env):
 
 
             # train_loss += mse(outputs, labels).item() + mse(drr.cuda(), inputs_X).item()
-            train_loss += mse(outputs, labels).item()
+            train_loss += bce(outputs, labels).item()
             num += data[0].size(0)
 
     return train_loss / num, drr_win, xray_win
@@ -131,7 +131,7 @@ if __name__ == "__main__":
 
     proj_pix = [256, 256]
 
-    bce = torch.nn.NLLLoss()
+    bce = torch.nn.BCELoss()
     mse = torch.nn.MSELoss()
 
     # train_win = vis.line(Y=torch.randn(1), X=np.array([5]), opts=dict(title="Train"))

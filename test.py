@@ -92,14 +92,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Preocess some numbers.")
     parser.add_argument('--net', type=str, help='Network architecture, 6layer, 8layer, unet, homo, homo_bn', default='pointnet2')
     parser.add_argument('--alpha', type=float, help='alpha', default=1e-2)
-    parser.add_argument('--lr', type=float, help='Learning rate', default=1e-3)
-    parser.add_argument('--gpu', type=str, help='gpu number', default='3')
+    parser.add_argument('--lr', type=float, help='Learning rate', default=1e-1)
+    parser.add_argument('--gpu', type=str, help='gpu number', default='0')
+    parser.add_argument('--qt', type=int, help='The number of bins', default=5)
 
     args = parser.parse_args()
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-    env = "seg_" + args.net + "_alpha_" + str(args.alpha) + "_lr_" + str(args.lr)
+    env = "seg_" + args.net + "_alpha_" + str(args.alpha) + "_lr_" + str(args.lr) + "_qt_" + str(args.qt)
 
     test_file = './test_z.csv'
     PATH = './saved/'
@@ -111,6 +112,7 @@ if __name__ == "__main__":
 
     proj_pix = [256, 256]
 
+    bce = torch.nn.BCELoss()
     mse = torch.nn.MSELoss()
 
     # train_win = vis.line(Y=torch.randn(1), X=np.array([5]), opts=dict(title="Train"))
@@ -134,14 +136,13 @@ if __name__ == "__main__":
     elif args.net == 'homo_bn':
         net = ConvNet.HomographyNet_bn(1, 20, 6)
     elif args.net == 'pointnet2':
-        net = ConvNet.PointReg(6, False)
+        net = ConvNet.PointReg(6 * args.qt, False)
     else:
         net = ConvNet.UNet(1, 20, 6)
 
     net = net.cuda()
     net = nn.DataParallel(net)
 
-    criterion = torch.nn.MSELoss()
     optimizer = optim.Adam(net.parameters(), lr=args.lr, weight_decay=1e-4)
     # train_scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=300)
 

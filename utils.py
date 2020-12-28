@@ -7,9 +7,12 @@ import scipy.io as sio
 
 def OnehotEncoding(arr, c):
     ind = arr // c + c // 2
-    # out[ind, [i for i in range(len(arr))]] = 1
+    ind = ind.type(dtype=torch.long)
 
-    return torch.tensor(ind, dtype=torch.long)
+    out = torch.zeros((c, 6))
+    out[ind, [i for i in range(len(arr))]] = 1
+
+    return out
 
 def OnehotDecoding(arr, c):
     _, out = np.where(arr.T == 1)
