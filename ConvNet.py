@@ -677,10 +677,13 @@ class PointReg(nn.Module):
         self.fc1 = nn.Linear(1024, 512)
         self.bn1 = nn.BatchNorm1d(512)
         self.drop1 = nn.Dropout(0.4)
-        self.fc2 = nn.Linear(512, 256)
-        self.bn2 = nn.BatchNorm1d(256)
+        self.fc2 = nn.Linear(1024, 512)
+        self.bn2 = nn.BatchNorm1d(512)
         self.drop2 = nn.Dropout(0.5)
-        self.fc3 = nn.Linear(256, out_dim)
+        self.fc3 = nn.Linear(512, 256)
+        self.bn3 = nn.BatchNorm1d(256)
+        self.drop3 = nn.Dropout(0.5)
+        self.fc4 = nn.Linear(256, out_dim)
 
     def forward(self, xyz, xy):
         B, _, _ = xyz.shape
@@ -700,10 +703,15 @@ class PointReg(nn.Module):
         l3_xy, l3_points = self.sa3_x(l2_xy, l2_points)
         x_2 = l3_points.view(B, 512)
 
+        x_t = torch.cat((x, x_2), dim=1)
+        pi_x = self.drop1(F.relu(self.fc1(x_t)))
+        x = x + pi_x
+        x_2 = x_2 + pi_x
+
         x = torch.cat((x, x_2), dim=1)
-        x = self.drop1(F.relu(self.fc1(x)))
         x = self.drop2(F.relu(self.fc2(x)))
-        x = self.fc3(x)
+        x = self.drop3(F.relu(self.fc3(x)))
+        x = self.fc4(x)
         x = x.reshape((xyz.size()[0], -1, 6))
         x = torch.softmax(x, dim=1)
 
