@@ -15,6 +15,7 @@ from torchvision import transforms
 from torch.utils.data import DataLoader
 import cv2
 import argparse
+import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation as R
 
 
@@ -34,55 +35,68 @@ def test(net, loader, optimizer, drr_win, xray_win, env):
         # inputs and labels.
         inputs = data[0]
         inputs_X = data[1]
+        CT_v = data[3]
         inputs, inputs_X, labels= inputs.cuda(), inputs_X.cuda(), data[2].cuda()
         # Set the gradient to be 0.
         optimizer.zero_grad()
 
         # Feed forward
-        if (torch.sum(inputs_X) != 0) and (inputs_X.size()[2] > 63):
+        if (torch.sum(inputs_X) != 0) and (inputs_X.size()[2] > 128):
             outputs = net(inputs, inputs_X)
+            _, pred = torch.max(outputs, 1)
+            T_pred = utils.OnehotDecoding(pred, args.qt)
 
-            # drr = utils.DRR_generation(data[0].view(1, inputs.shape[2], inputs.shape[3], inputs.shape[4]), outputs, train_batch_num, proj_pix).view((1, proj_pix[0], proj_pix[1]))
+            drr = utils.DRR_generation(CT_v.view(1, CT_v.shape[2], CT_v.shape[3], CT_v.shape[4]), T_pred, train_batch_num, proj_pix).view((1, proj_pix[0], proj_pix[1]))
             # loss = mse(outputs, labels) + mse(drr.cuda(), inputs_X)
-            outputs = outputs.cpu().detach().numpy()
-            labels = labels.cpu().detach().numpy()
-            loss = np.linalg.norm(outputs[0][3:]-labels[0][3:])
-
-            Rx = R.from_euler('x', outputs[:, 0], degrees=True)
-            Ry = R.from_euler('y', outputs[:, 1], degrees=True)
-            Rz = R.from_euler('z', outputs[:, 2], degrees=True)
-            r = Rx * Ry * Rz
-            r = r.as_dcm().squeeze()
-
-            Rx = R.from_euler('x', labels[:, 0], degrees=True)
-            Ry = R.from_euler('y', labels[:, 1], degrees=True)
-            Rz = R.from_euler('z', labels[:, 2], degrees=True)
-            r_t = Rx * Ry * Rz
-            r_t = r_t.as_dcm().squeeze()
-
-            rr = np.matmul(r_t, r.T)
-            # r = R.from_matrix(rr)
-            tr_r = np.trace(rr)
-
-            theta = np.arccos((tr_r -1)/2)
-            r_loss += theta
-
-
-            # tt = drr[0].cpu().numpy().squeeze()
-            # tt2 = data[1][0].cpu().numpy().squeeze()
-            # if (tt.max() != tt.min()):
-            #     tt = (tt - tt.min()) / (tt.max() - tt.min())
-            # cv2.imshow('img', tt2)
-            # cv2.waitKey(10)
+            # _, outputs = torch.max(outputs, 1)
+            # _, labels = torch.max(labels, 1)
             #
-            # cv2.imshow('drr', tt)
-            # cv2.waitKey(10)
+            # outputs = outputs.cpu().detach().numpy()
+            # labels = labels.cpu().detach().numpy()
+            #
+            # outputs = utils.OnehotDecoding(outputs, args.qt)
+            # labels = utils.OnehotDecoding(labels, args.qt)
+            #
+            # loss = np.linalg.norm(outputs[0][3:]-labels[0][3:])
+            #
+            # Rx = R.from_euler('x', outputs[:, 0], degrees=True)
+            # Ry = R.from_euler('y', outputs[:, 1], degrees=True)
+            # Rz = R.from_euler('z', outputs[:, 2], degrees=True)
+            # r = Rx * Ry * Rz
+            # r = r.as_dcm().squeeze()
+            #
+            # Rx = R.from_euler('x', labels[:, 0], degrees=True)
+            # Ry = R.from_euler('y', labels[:, 1], degrees=True)
+            # Rz = R.from_euler('z', labels[:, 2], degrees=True)
+            # r_t = Rx * Ry * Rz
+            # r_t = r_t.as_dcm().squeeze()
+            #
+            # rr = np.matmul(r_t, r.T)
+            # # r = R.from_matrix(rr)
+            # tr_r = np.trace(rr)
+            #
+            # theta = np.arccos((tr_r -1)/2)
+            # r_loss += theta
+
+
+            tt = drr[0].cpu().numpy().squeeze()
+            tt2 = data[4][0][0].cpu().numpy().squeeze()
+            if (tt.max() != tt.min()):
+                tt = (tt - tt.min()) / (tt.max() - tt.min())
+
+
+            plt.subplot(1, 2, 1)
+            plt.imshow(tt2)
+            plt.subplot(1, 2, 2)
+            plt.imshow(tt)
+            plt.pause(1)
+
 
             # xray_win = utils.PlotImage(vis=vis, img=data[1][0].cpu().numpy().squeeze(), win=xray_win, env=env,
             #                            title="Test X-ray")
             # drr_win = utils.PlotImage(vis=vis, img=drr[0].cpu().numpy().squeeze(), win=drr_win, env=env, title="Test DRR")
 
-            t_loss += loss
+            # t_loss += loss
             num += data[0].size(0)
 
     return r_loss / num, t_loss / num, drr_win, xray_win
@@ -91,10 +105,10 @@ def test(net, loader, optimizer, drr_win, xray_win, env):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Preocess some numbers.")
     parser.add_argument('--net', type=str, help='Network architecture, 6layer, 8layer, unet, homo, homo_bn', default='pointnet2')
-    parser.add_argument('--alpha', type=float, help='alpha', default=1e-2)
-    parser.add_argument('--lr', type=float, help='Learning rate', default=1e-1)
-    parser.add_argument('--gpu', type=str, help='gpu number', default='0')
-    parser.add_argument('--qt', type=int, help='The number of bins', default=5)
+    parser.add_argument('--alpha', type=float, help='alpha', default=1e-3)
+    parser.add_argument('--lr', type=float, help='Learning rate', default=1e-3)
+    parser.add_argument('--gpu', type=str, help='gpu number', default='6, 7')
+    parser.add_argument('--qt', type=int, help='The number of bins', default=20)
 
     args = parser.parse_args()
 
@@ -125,7 +139,7 @@ if __name__ == "__main__":
         transforms.ToTensor(),
         # transforms.Resize((64, 64))
     ])
-    test_dataset = SegData_catheter_pt(test_file, proj_pix, transform=transfroms_)
+    test_dataset = SegData_catheter_pt(test_file, proj_pix, args.qt, transform=transfroms_)
     testloader = DataLoader(test_dataset, batch_size=train_batch_num, shuffle=True, num_workers=0)
     if args.net == '6layer':
         net = ConvNet.layer6Net(1, 20, 6)
