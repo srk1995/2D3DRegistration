@@ -3,10 +3,13 @@ import torch.nn as nn
 import torch
 from torch.nn import functional as F
 from scipy.spatial.transform import Rotation as R
+from scipy.ndimage import gaussian_filter
 import scipy.io as sio
 
-def OnehotEncoding(arr, c):
-    ind = arr // c + c // 2
+
+def OnehotEncoding(arr, val, c):
+    val = np.repeat(np.array(val).reshape(2, 2).T, 3).reshape(-1, 6)
+    ind = (arr - val[0]) // ((val[1] - val[0]) / (c - 1))
     ind = ind.type(dtype=torch.long)
 
     out = torch.zeros((c, 6))
@@ -14,8 +17,9 @@ def OnehotEncoding(arr, c):
 
     return out
 
-def OnehotDecoding(arr, c):
-    out = (arr - c // 2) * c
+def OnehotDecoding(arr, val, c):
+    val = np.repeat(np.array(val).reshape(2, 2).T, 3).reshape(-1, 6)
+    out = (arr * ((val[1] - val[0]) / (c - 1))) + val[0]
 
     return out
 
@@ -323,6 +327,10 @@ def DRR_generation(CT, R_pred, num, proj_pix):
         proj_im = (proj_im - proj_im_mean) / proj_im_std
     return proj_im
 
+
+def HeatMap(T):
+    heatmap = gaussian_filter(T, sigma=5)
+    return heatmap
 
 def TRE(CT, R_gt, R_pred, num):
     """

@@ -31,9 +31,9 @@ class SegData(Dataset):
         self.dlist = [os.path.join(self.root, x) for x in os.listdir(root)]
         self.transform = transform
         self.zeros = np.array([0], dtype=np.float64).reshape(-1)
-        self.rotation = np.array([np.linspace(-10, 10, 3)] * self.s).reshape(-1)
+        self.rotation = np.array([np.linspace(-30, 30, 15)] * self.s).reshape(-1)
         self.translation = np.array([np.linspace(-5, 5, 3)] * self.s).reshape(-1)
-        self.label = cartesian_product(self.zeros, self.zeros, self.rotation, self.zeros, self.zeros, self.zeros)
+        self.label = cartesian_product(self.zeros, self.zeros, self.rotation, self.zeros, self.zeros, self.translation)
         self.CT = []
 
         # self.drr_win = None
@@ -41,9 +41,9 @@ class SegData(Dataset):
 
         # self.num_samples = len(self.dlist)
         if train:
-            file = open('train_z.csv', 'w')
+            file = open('train_zz.csv', 'w')
         else:
-            file = open('test_z.csv', 'w')
+            file = open('test_zz.csv', 'w')
         for f in self.dlist:
             # path = os.path.join(f, 'xray_256_complex')
             # if not os.path.isdir(path):

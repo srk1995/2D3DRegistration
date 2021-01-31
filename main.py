@@ -15,6 +15,7 @@ from torchvision import transforms
 from torch.utils.data import DataLoader
 import cv2
 import argparse
+from scipy.ndimage.filters import gaussian_filter
 
 
 def transform(img):
@@ -47,7 +48,7 @@ def train(net, loader, optimizer, drr_win, xray_win, env):
             # T_pred = utils.OnehotDecoding(pred, args.qt)
             # drr = utils.DRR_generation(CT_v.view(1, CT_v.shape[2], CT_v.shape[3], CT_v.shape[4]), T_pred, train_batch_num, proj_pix).view((1, proj_pix[0], proj_pix[1]))
             # loss = bce(outputs, labels) + alpha * mse(drr.cuda(), xray_v)
-            loss = bce(outputs, labels)
+            loss = bce(outputs, torch.from_numpy(gaussian_filter(labels.cpu().numpy(), sigma=5)).cuda())
 
             loss.backward()
             optimizer.step()
@@ -66,7 +67,7 @@ def train(net, loader, optimizer, drr_win, xray_win, env):
 
 
             # train_loss += mse(outputs, labels).item() + mse(drr.cuda(), inputs_X).item()
-            train_loss += bce(outputs, labels).item()
+            train_loss += mse(outputs, labels).item()
             num += data[0].size(0)
 
     return train_loss / num, drr_win, xray_win
@@ -94,7 +95,7 @@ def test(net, loader, optimizer, drr_win, xray_win, env):
             # T_pred = utils.OnehotDecoding(pred, args.qt).cuda()
             # drr = utils.DRR_generation(CT_v.view(1, CT_v.shape[2], CT_v.shape[3], CT_v.shape[4]), T_pred, train_batch_num, proj_pix).view((1, proj_pix[0], proj_pix[1]))
             # loss = bce(outputs, labels) + alpha * mse(drr.cuda(), xray_v)
-            loss = bce(outputs, labels)
+            loss = bce(outputs, torch.from_numpy(gaussian_filter(labels.cpu().numpy(), sigma=5)).cuda())
 
             # xray_win = utils.PlotImage(vis=vis, img=data[1][0].cpu().numpy().squeeze(), win=xray_win, env=env,
             #                            title="Test X-ray")
@@ -109,10 +110,10 @@ def test(net, loader, optimizer, drr_win, xray_win, env):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Preocess some numbers.")
     parser.add_argument('--net', type=str, help='Network architecture, 6layer, 8layer, unet, homo, homo_bn', default='pointnet2')
-    parser.add_argument('--alpha', type=float, help='alpha', default=1e-2)
-    parser.add_argument('--lr', type=float, help='Learning rate', default=1e-1)
-    parser.add_argument('--gpu', type=str, help='gpu number', default='0')
-    parser.add_argument('--qt', type=int, help='The number of bins', default=5)
+    parser.add_argument('--alpha', type=float, help='alpha', default=1e-5)
+    parser.add_argument('--lr', type=float, help='Learning rate', default=1e-3)
+    parser.add_argument('--gpu', type=str, help='gpu number', default='9')
+    parser.add_argument('--qt', type=int, help='The number of bins', default=1024)
 
     args = parser.parse_args()
 
@@ -126,10 +127,12 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     vis = visdom.Visdom()
 
-    train_batch_num = 1
+    train_batch_num = 4
     alpha = args.alpha
 
     proj_pix = [256, 256]
+    val = [-30, 30, -5, 5]
+    lb = utils.OnehotDecoding(np.repeat(np.array([i for i in range(args.qt)]), 6).reshape(-1, 6), val, args.qt)
 
     bce = torch.nn.BCELoss()
     mse = torch.nn.MSELoss()

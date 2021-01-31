@@ -719,6 +719,62 @@ class PointReg(nn.Module):
 
 
 
+class PointReg_dcp(nn.Module):
+    def __init__(self, out_dim, normal_channel=False):
+        super(PointReg_dcp, self).__init__()
+        in_channel = 3 if normal_channel else 0
+        self.normal_channel = normal_channel
+        self.sa1 = PointNetSetAbstractionMsg(512, [0.1, 0.2, 0.4], [16, 32, 128], in_channel, [[32, 32, 64], [64, 64, 128], [64, 96, 128]])
+        self.sa2 = PointNetSetAbstractionMsg(128, [0.2, 0.4, 0.8], [32, 64, 128], 320, [[64, 64, 128], [128, 128, 256], [128, 128, 256]])
+        self.sa3 = PointNetSetAbstraction(None, None, None, 640 + 3, [256, 256, 512], True)
+
+        self.sa1_x = PointNetSetAbstractionMsg(512, [0.1, 0.2, 0.4], [16, 32, 128], -1, [[32, 32, 64], [64, 64, 128], [64, 96, 128]])
+        self.sa2_x = PointNetSetAbstractionMsg(128, [0.2, 0.4, 0.8], [32, 64, 128], 319, [[64, 64, 128], [128, 128, 256], [128, 128, 256]])
+        self.sa3_x = PointNetSetAbstraction(None, None, None, 640 + 2, [256, 256, 512], True)
+
+        self.fc1 = nn.Linear(1024, 512)
+        self.bn1 = nn.BatchNorm1d(512)
+        self.drop1 = nn.Dropout(0.4)
+        self.fc2 = nn.Linear(1024, 512)
+        self.bn2 = nn.BatchNorm1d(512)
+        self.drop2 = nn.Dropout(0.5)
+        self.fc3 = nn.Linear(512, 256)
+        self.bn3 = nn.BatchNorm1d(256)
+        self.drop3 = nn.Dropout(0.5)
+        self.fc4 = nn.Linear(256, out_dim)
+
+    def forward(self, xyz, xy):
+        B, _, _ = xyz.shape
+        if self.normal_channel:
+            norm = xyz[:, 3:, :]
+            xyz = xyz[:, :3, :]
+            xy = xy[:, :2, :]
+        else:
+            norm = None
+        l1_xyz, l1_points = self.sa1(xyz, norm)
+        l2_xyz, l2_points = self.sa2(l1_xyz, l1_points)
+        l3_xyz, l3_points = self.sa3(l2_xyz, l2_points)
+        x = l3_points.view(B, 512)
+
+        l1_xy, l1_points = self.sa1_x(xy, norm)
+        l2_xy, l2_points = self.sa2_x(l1_xy, l1_points)
+        l3_xy, l3_points = self.sa3_x(l2_xy, l2_points)
+        x_2 = l3_points.view(B, 512)
+
+        x_t = torch.cat((x, x_2), dim=1)
+        pi_x = self.drop1(F.relu(self.fc1(x_t)))
+        x = x + pi_x
+        x_2 = x_2 + pi_x
+
+        x = torch.cat((x, x_2), dim=1)
+        x = self.drop2(F.relu(self.fc2(x)))
+        x = self.drop3(F.relu(self.fc3(x)))
+        x = self.fc4(x)
+        x = x.reshape((xyz.size()[0], -1, 6))
+        x = torch.softmax(x, dim=1)
+
+        return x
+
 if __name__ == "__main__":
     # The number of block is 5.
     net = Net(3, 16, 6)
