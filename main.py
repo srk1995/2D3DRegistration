@@ -27,16 +27,16 @@ def transform(img):
 
 def train(net, loader, optimizer, drr_win, xray_win, env):
     train_loss = 0.0
-    num = 0
+    num = 1
     net.train()
 
     for i, data in enumerate(loader, 0):
         # inputs and labels.
         inputs = data[0]
         inputs_X = data[1]
-        CT_v = data[3]
-        xray_v = data[4].cuda()
-        inputs, inputs_X, labels = inputs.cuda(), inputs_X.cuda(), data[2].cuda()
+        # CT_v = data[3]
+        # xray_v = data[4].cuda()
+        inputs, inputs_X, labels = inputs.float().cuda(), inputs_X.float().cuda(), data[2].cuda()
         # Set the gradient to be 0.
         optimizer.zero_grad()
 
@@ -44,10 +44,13 @@ def train(net, loader, optimizer, drr_win, xray_win, env):
         if (torch.sum(inputs_X) != 0) and (inputs_X.size()[2] > 128):
             outputs = net(inputs, inputs_X)
 
-            # _, pred = torch.max(outputs, 1)
-            # T_pred = utils.OnehotDecoding(pred, args.qt)
+            _, pred = torch.max(outputs, 1)
+            # T_pred = utils.OnehotDecoding(pred.cpu(), val, args.qt).float()
             # drr = utils.DRR_generation(CT_v.view(1, CT_v.shape[2], CT_v.shape[3], CT_v.shape[4]), T_pred, train_batch_num, proj_pix).view((1, proj_pix[0], proj_pix[1]))
             # loss = bce(outputs, labels) + alpha * mse(drr.cuda(), xray_v)
+            _, label = torch.max(labels, 1)
+            weight = torch.abs(pred - label).reshape((-1, 1, 1))
+            bce = torch.nn.BCELoss(weight=weight)
             loss = bce(outputs, torch.from_numpy(gaussian_filter(labels.cpu().numpy(), sigma=5)).cuda())
 
             loss.backward()
@@ -75,7 +78,7 @@ def train(net, loader, optimizer, drr_win, xray_win, env):
 
 def test(net, loader, optimizer, drr_win, xray_win, env):
     test_loss = 0.0
-    num = 0
+    num = 1
     net.eval()
 
     for i, data in enumerate(loader, 0):
@@ -84,7 +87,7 @@ def test(net, loader, optimizer, drr_win, xray_win, env):
         inputs_X = data[1]
         # CT_v = data[3]
         # xray_v = data[4].cuda()
-        inputs, inputs_X, labels= inputs.cuda(), inputs_X.cuda(), data[2].cuda()
+        inputs, inputs_X, labels = inputs.float().cuda(), inputs_X.float().cuda(), data[2].cuda()
         # Set the gradient to be 0.
         optimizer.zero_grad()
 
@@ -92,9 +95,13 @@ def test(net, loader, optimizer, drr_win, xray_win, env):
         if (torch.sum(inputs_X) != 0) and (inputs_X.size()[2] > 128):
             outputs = net(inputs, inputs_X)
 
-            # T_pred = utils.OnehotDecoding(pred, args.qt).cuda()
+            _, pred = torch.max(outputs, 1)
+            # T_pred = utils.OnehotDecoding(pred.cpu(), val, args.qt).float()
             # drr = utils.DRR_generation(CT_v.view(1, CT_v.shape[2], CT_v.shape[3], CT_v.shape[4]), T_pred, train_batch_num, proj_pix).view((1, proj_pix[0], proj_pix[1]))
             # loss = bce(outputs, labels) + alpha * mse(drr.cuda(), xray_v)
+            _, label = torch.max(labels, 1)
+            weight = torch.abs(pred - label).reshape((-1, 1, 1))
+            bce = torch.nn.BCELoss(weight=weight)
             loss = bce(outputs, torch.from_numpy(gaussian_filter(labels.cpu().numpy(), sigma=5)).cuda())
 
             # xray_win = utils.PlotImage(vis=vis, img=data[1][0].cpu().numpy().squeeze(), win=xray_win, env=env,
@@ -110,9 +117,9 @@ def test(net, loader, optimizer, drr_win, xray_win, env):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Preocess some numbers.")
     parser.add_argument('--net', type=str, help='Network architecture, 6layer, 8layer, unet, homo, homo_bn', default='pointnet2')
-    parser.add_argument('--alpha', type=float, help='alpha', default=1e-5)
+    parser.add_argument('--alpha', type=float, help='alpha', default=1e-3)
     parser.add_argument('--lr', type=float, help='Learning rate', default=1e-3)
-    parser.add_argument('--gpu', type=str, help='gpu number', default='9')
+    parser.add_argument('--gpu', type=str, help='gpu number', default='9,8,7,6,5,4,3,2')
     parser.add_argument('--qt', type=int, help='The number of bins', default=1024)
 
     args = parser.parse_args()
@@ -121,18 +128,18 @@ if __name__ == "__main__":
 
     env = "seg_" + args.net + "_alpha_" + str(args.alpha) + "_lr_" + str(args.lr) + "_qt_" + str(args.qt)
 
-    train_file = './train_z.csv'
-    test_file = './test_z.csv'
+    train_file = './train_zz.csv'
+    test_file = './test_zz.csv'
     PATH = './saved/'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     vis = visdom.Visdom()
 
-    train_batch_num = 4
+    train_batch_num = 64
     alpha = args.alpha
 
     proj_pix = [256, 256]
-    val = [-30, 30, -5, 5]
-    lb = utils.OnehotDecoding(np.repeat(np.array([i for i in range(args.qt)]), 6).reshape(-1, 6), val, args.qt)
+    val = [-30, 30]
+    lb = utils.OnehotDecoding(np.repeat(np.array([i for i in range(args.qt)]), 1).reshape(-1, 1), val, args.qt)
 
     bce = torch.nn.BCELoss()
     mse = torch.nn.MSELoss()
@@ -162,7 +169,7 @@ if __name__ == "__main__":
     elif args.net == 'homo_bn':
         net = ConvNet.HomographyNet_bn(1, 20, 6)
     elif args.net == 'pointnet2':
-        net = ConvNet.PointReg(6 * args.qt, False)
+        net = ConvNet.PointReg(1 * args.qt, False)
     else:
         net = ConvNet.UNet(1, 20, 6)
 

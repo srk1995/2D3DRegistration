@@ -712,7 +712,7 @@ class PointReg(nn.Module):
         x = self.drop2(F.relu(self.fc2(x)))
         x = self.drop3(F.relu(self.fc3(x)))
         x = self.fc4(x)
-        x = x.reshape((xyz.size()[0], -1, 6))
+        x = x.reshape((xyz.size()[0], -1, 1))
         x = torch.softmax(x, dim=1)
 
         return x

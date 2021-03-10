@@ -33,7 +33,7 @@ class SegData(Dataset):
         self.zeros = np.array([0], dtype=np.float64).reshape(-1)
         self.rotation = np.array([np.linspace(-30, 30, 15)] * self.s).reshape(-1)
         self.translation = np.array([np.linspace(-5, 5, 3)] * self.s).reshape(-1)
-        self.label = cartesian_product(self.zeros, self.zeros, self.rotation, self.zeros, self.zeros, self.translation)
+        self.label = cartesian_product(self.zeros, self.zeros, self.rotation, self.zeros, self.zeros, self.zeros)
         self.CT = []
 
         # self.drr_win = None

@@ -30,12 +30,13 @@ def test(net, loader, optimizer, drr_win, xray_win, env):
     r_loss = 0.0
     num = 0
     net.eval()
-    lb = utils.OnehotDecoding(np.repeat(np.array([i for i in range(args.qt)]), 6).reshape(-1, 6), val, args.qt)
+    lb = utils.OnehotDecoding(np.repeat(np.array([i for i in range(args.qt)]), 1).reshape(-1, 1), val, args.qt)
+
     for i, data in enumerate(loader, 0):
         # inputs and labels.
         inputs = data[0]
         inputs_X = data[1]
-        CT_v = data[3]
+        # CT_v = data[3]
         inputs, inputs_X, labels= inputs.cuda(), inputs_X.cuda(), data[2].cuda()
         # Set the gradient to be 0.
         optimizer.zero_grad()
@@ -62,11 +63,13 @@ def test(net, loader, optimizer, drr_win, xray_win, env):
             r = Rx * Ry * Rz
             r = r.as_dcm().squeeze()
 
-            Rx = R.from_euler('x', labels[:, 0], degrees=True)
-            Ry = R.from_euler('y', labels[:, 1], degrees=True)
+            # Rx = R.from_euler('x', labels[:, 0], degrees=True)
+            # Ry = R.from_euler('y', labels[:, 1], degrees=True)
             Rz = R.from_euler('z', labels[:, 2], degrees=True)
-            r_t = Rx * Ry * Rz
-            r_t = r_t.as_dcm().squeeze()
+            # r_t = Rx * Ry * Rz
+            # r_t = r_t.as_dcm().squeeze()
+
+            r_t = Rz.as_dcm().squeeze()
 
             rr = np.matmul(r_t, r.T)
             # r = R.from_matrix(rr)
@@ -103,8 +106,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Preocess some numbers.")
     parser.add_argument('--net', type=str, help='Network architecture, 6layer, 8layer, unet, homo, homo_bn', default='pointnet2')
     parser.add_argument('--alpha', type=float, help='alpha', default=1e-4)
-    parser.add_argument('--lr', type=float, help='Learning rate', default=1e-4)
-    parser.add_argument('--gpu', type=str, help='gpu number', default='5,6')
+    parser.add_argument('--lr', type=float, help='Learning rate', default=1e-3)
+    parser.add_argument('--gpu', type=str, help='gpu number', default='1,0')
     parser.add_argument('--qt', type=int, help='The number of bins', default=1024)
 
     args = parser.parse_args()
@@ -122,7 +125,7 @@ if __name__ == "__main__":
     alpha = args.alpha
 
     proj_pix = [256, 256]
-    val = [-30, 30, -5, 5]
+    val = [-30, 30]
 
     bce = torch.nn.BCELoss()
     mse = torch.nn.MSELoss()
@@ -148,7 +151,7 @@ if __name__ == "__main__":
     elif args.net == 'homo_bn':
         net = ConvNet.HomographyNet_bn(1, 20, 6)
     elif args.net == 'pointnet2':
-        net = ConvNet.PointReg(6 * args.qt, False)
+        net = ConvNet.PointReg(1 * args.qt, False)
     else:
         net = ConvNet.UNet(1, 20, 6)
 
@@ -163,8 +166,8 @@ if __name__ == "__main__":
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.1)
 
     # vis.close(env="seg_6layer")
-    if os.path.isfile("./saved/BEST" + env[3:] + ".pth"):
-        ck = torch.load("./saved/BEST" + env[3:] + ".pth")
+    if os.path.isfile("./saved/BEST" + env[3:] + "1.pth"):
+        ck = torch.load("./saved/BEST" + env[3:] + "1.pth")
         net.load_state_dict(ck['state_dict'])
         optimizer.load_state_dict(ck['optimizer'])
         start = ck['epoch']

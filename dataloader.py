@@ -10,6 +10,7 @@ import visdom
 import utils
 import skeleton2
 from scipy import ndimage
+import argparse
 import time
 
 
@@ -328,6 +329,73 @@ class SegData_catheter_pt(Dataset):
         self.drr_win = None
         self.vis = visdom.Visdom()
         self.c = c
+        self.num_v = np.inf
+        self.num_c = np.inf
+
+        # self.num_samples = len(self.dlist)
+
+    def __getitem__(self, index):
+        """
+
+        :param index:
+        :return: CT_out: [C, D, H, W] == [1, 393, 512, 512]
+        :return drr: [C, H, W]
+        :return T : [6]
+        """
+        while True:
+            tt = self.dlist[index, :]
+            val = [-30, 30, -5, 5]
+
+            CT = os.path.join(tt[0])
+
+            CT= np.load(CT)
+            CT_v = np.expand_dims(np.array(CT, dtype=np.float32), axis=-1).transpose((3, 2, 1, 0))
+            CT_v = torch.tensor(CT_v)
+            str_3D = ndimage.morphology.generate_binary_structure(3, 1)
+            big_str_3D = ndimage.morphology.iterate_structure(str_3D, 3)
+            arr_out_3D = ndimage.morphology.binary_erosion(CT_v[0], big_str_3D)
+
+            T = torch.tensor(np.array(tt[1:][0].split('_'), dtype=np.float32), dtype=torch.float32)
+            T = utils.OnehotEncoding(T[2], val, self.c)
+
+            ttt = tt[0].split('/')
+            ttt = ttt[:-1]
+            t = '/'
+            for x in ttt:
+                t = os.path.join(t, x)
+            xray_v = np.load(os.path.join(t, tt[-1] + '.npy'))
+
+            CT_out = np.array(np.where(F.interpolate(torch.tensor(arr_out_3D, dtype=torch.float32), size=128)))
+            # CT_out = np.array(np.where(F.interpolate(CT_v[0], size=128)))
+            xray = np.array(np.where(xray_v[0] != xray_v.min()))
+
+            if (CT_out.shape[1] > 5000) & (xray.shape[1] > 400):
+                CT_out = CT_out[:, np.random.randint(CT_out.shape[1], size=5000)]
+                xray = xray[:, np.random.randint(xray.shape[1], size=400)]
+                break
+            else:
+                index = np.random.randint(len(self.dlist))
+
+
+        return CT_out, xray, T
+
+    def __len__(self):
+        return len(self.dlist)
+
+class SegData_catheter_pt_tr(Dataset):
+    def __init__(self, file, proj_pix, c, transform):
+        """
+        :param root: the path of data
+        :param transform: transforms to make the output tensor
+
+        """
+        self.dlist = np.loadtxt(file, delimiter=",", dtype=str)
+        self.transform = transform
+        self.proj_pix = proj_pix
+
+        self.drr_win = None
+        self.vis = visdom.Visdom()
+        self.c = c
 
         # self.num_samples = len(self.dlist)
 
@@ -433,27 +501,49 @@ class Kaist_Data(Dataset):
         return self.num
 
 
-
 if __name__ == "__main__":
-    # train_path = './registration/2D3D_Data/train'
-    # test_path = './registration/2D3D_Data/test'
-    # train_path = '/home/srk1995/pub/db/Dicom_Image_Unet_pseudo/Train/'
-    # test_path = '/home/srk1995/pub/db/Dicom_Image_Unet_pseudo/Test/'
+    parser = argparse.ArgumentParser(description="Preocess some numbers.")
+    parser.add_argument('--net', type=str, help='Network architecture, 6layer, 8layer, unet, homo, homo_bn', default='pointnet2')
+    parser.add_argument('--alpha', type=float, help='alpha', default=1e-4)
+    parser.add_argument('--lr', type=float, help='Learning rate', default=1e-3)
+    parser.add_argument('--gpu', type=str, help='gpu number', default='9')
+    parser.add_argument('--qt', type=int, help='The number of bins', default=1024)
+
+    args = parser.parse_args()
+
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+
+    env = "seg_" + args.net + "_alpha_" + str(args.alpha) + "_lr_" + str(args.lr) + "_qt_" + str(args.qt)
+
+    train_file = './train_zz.csv'
+    test_file = './test_zz.csv'
+    PATH = './saved/'
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    vis = visdom.Visdom()
+
+    train_batch_num = 1
+    alpha = args.alpha
+
+    proj_pix = [256, 256]
+    val = [-30, 30, -5, 5]
+    lb = utils.OnehotDecoding(np.repeat(np.array([i for i in range(args.qt)]), 6).reshape(-1, 6), val, args.qt)
 
     train_file = './train_z.csv'
     test_file = './test_z.csv'
 
+    transfroms_ = transforms.Compose([
+        transforms.ToTensor(),
+        # transforms.Resize((64, 64))
+    ])
 
-    # cTdataloader = Data(root, transform=transforms.ToTensor())
-    kdata_train = SegData_catheter(train_file, [256, 256], transform=transforms.ToTensor())
-    # kdata_test = SegData_catheter(test_file, transform=transforms.ToTensor())
-
-    # kdata_train = Data(train_path, transform=transforms.ToTensor())
-    # kdata_test = Data(test_path, transform=transforms.ToTensor())
-
-    trainloader = DataLoader(kdata_train, batch_size=1, shuffle=True, num_workers=0)
-    # testloader = DataLoader(kdata_test, batch_size=1, shuffle=False, num_workers=0)
+    train_dataset = SegData_catheter_pt(train_file, proj_pix, args.qt, transform=transfroms_)
+    test_dataset = SegData_catheter_pt(test_file, proj_pix, args.qt, transform=transfroms_)
+    trainloader = DataLoader(train_dataset, batch_size=1, shuffle=True, num_workers=0)
+    testloader = DataLoader(test_dataset, batch_size=1, shuffle=False,num_workers=0)
     for i, data in enumerate(trainloader):
-        print(data[3])
+        print("")
+
+    for i, data in enumerate(testloader):
+        print("")
 
     print("EOP")

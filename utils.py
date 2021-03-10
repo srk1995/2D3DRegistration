@@ -8,17 +8,17 @@ import scipy.io as sio
 
 
 def OnehotEncoding(arr, val, c):
-    val = np.repeat(np.array(val).reshape(2, 2).T, 3).reshape(-1, 6)
+    # val = np.repeat(np.array(val).reshape(2, 2).T, 3).reshape(-1, 1)
     ind = (arr - val[0]) // ((val[1] - val[0]) / (c - 1))
     ind = ind.type(dtype=torch.long)
 
-    out = torch.zeros((c, 6))
-    out[ind, [i for i in range(len(arr))]] = 1
+    out = torch.zeros((c, 1))
+    out[ind, :] = 1
 
     return out
 
 def OnehotDecoding(arr, val, c):
-    val = np.repeat(np.array(val).reshape(2, 2).T, 3).reshape(-1, 6)
+    # val = np.repeat(np.array(val).reshape(2, 2).T, 3).reshape(-1, 6)
     out = (arr * ((val[1] - val[0]) / (c - 1))) + val[0]
 
     return out
